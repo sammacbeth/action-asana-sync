@@ -1,11 +1,10 @@
-name: 'Your name here'
-description: 'Provide a description here'
-author: 'Your name or organization here'
+name: 'Asana Sync'
+description: 'Sync Github PRs to Asana Tasks'
+author: 'Sam Macbeth'
 inputs:
-  milliseconds: # change this
-    required: true
-    description: 'input description here'
-    default: 'default value if applicable'
+  ASANA_WORKSPACE_ID:
+    required: false
+    description: 'Asana workspace ID'
 runs:
   using: 'node16'
   main: 'dist/index.js'

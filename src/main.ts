@@ -1,16 +1,18 @@
 import * as core from '@actions/core'
-import {wait} from './wait'
+import * as github from '@actions/github'
+import {PullRequestEvent} from '@octokit/webhooks-types'
 
 async function run(): Promise<void> {
   try {
-    const ms: string = core.getInput('milliseconds')
-    core.debug(`Waiting ${ms} milliseconds ...`) // debug is only output if you set the secret `ACTIONS_STEP_DEBUG` to true
-
-    core.debug(new Date().toTimeString())
-    await wait(parseInt(ms, 10))
-    core.debug(new Date().toTimeString())
-
-    core.setOutput('time', new Date().toTimeString())
+    if (github.context.eventName === 'pull_request') {
+      const payload = github.context.payload as PullRequestEvent
+      const url = payload.pull_request.url
+      core.info(`PR url: ${payload.pull_request}`)
+      core.info(`Action: ${payload.action}`)
+      return
+    }
+    core.setFailed('Can only run on PR events')
+    // core.setOutput('time', new Date().toTimeString())
   } catch (error) {
     if (error instanceof Error) core.setFailed(error.message)
   }
