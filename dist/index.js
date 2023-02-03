@@ -8,7 +8,11 @@ require('./sourcemap-register.js');/******/ (() => { // webpackBootstrap
 
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
-    Object.defineProperty(o, k2, { enumerable: true, get: function() { return m[k]; } });
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
 }) : (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     o[k2] = m[k];
@@ -43,7 +47,7 @@ function run() {
             if (github.context.eventName === 'pull_request') {
                 const payload = github.context.payload;
                 const url = payload.pull_request.url;
-                core.info(`PR url: ${payload.pull_request}`);
+                core.info(`PR url: ${JSON.stringify(payload.pull_request)}`);
                 core.info(`Action: ${payload.action}`);
                 return;
             }

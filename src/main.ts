@@ -7,7 +7,7 @@ async function run(): Promise<void> {
     if (github.context.eventName === 'pull_request') {
       const payload = github.context.payload as PullRequestEvent
       const url = payload.pull_request.url
-      core.info(`PR url: ${payload.pull_request}`)
+      core.info(`PR url: ${JSON.stringify(payload.pull_request)}`)
       core.info(`Action: ${payload.action}`)
       return
     }
