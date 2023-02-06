@@ -15,27 +15,58 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-const asana_1 = __importDefault(__nccwpck_require__(3565));
+const asana_1 = __nccwpck_require__(3565);
 const core_1 = __nccwpck_require__(2186);
 const github_1 = __nccwpck_require__(5438);
+const CUSTOM_FIELD_NAMES = {
+    url: 'Github URL',
+    status: 'Github Status'
+};
+const client = asana_1.Client.create({
+    defaultHeaders: {
+        'asana-enable': 'new_user_task_lists,new_project_templates'
+    }
+}).useAccessToken((0, core_1.getInput)('ASANA_ACCESS_TOKEN', { required: true }));
+const ASANA_WORKSPACE_ID = (0, core_1.getInput)('ASANA_WORKSPACE_ID', { required: true });
+const PROJECT_ID = (0, core_1.getInput)('ASANA_PROJECT_ID', { required: true });
 function run() {
+    var _a, _b;
     return __awaiter(this, void 0, void 0, function* () {
         try {
-            const client = asana_1.default.Client.create({
-                defaultHeaders: {
-                    'asana-enable': 'new_user_task_lists,new_project_templates'
-                }
-            }).useAccessToken((0, core_1.getInput)('ASANA_ACCESS_TOKEN', { required: true }));
             if (github_1.context.eventName === 'pull_request') {
                 const payload = github_1.context.payload;
-                const url = payload.pull_request.html_url;
-                (0, core_1.info)(`PR url: ${url}`);
+                const htmlUrl = payload.pull_request.html_url;
+                (0, core_1.info)(`PR url: ${htmlUrl}`);
                 (0, core_1.info)(`Action: ${payload.action}`);
-                (0, core_1.info)(`User: ${JSON.stringify(yield client.users.me())}`);
+                const customFields = yield findCustomFields(ASANA_WORKSPACE_ID);
+                // look for an existing task
+                const prTask = yield client.tasks.searchInWorkspace(ASANA_WORKSPACE_ID, {
+                    [`custom_fields.${customFields.url.gid}.value`]: htmlUrl
+                });
+                if (prTask.data.length === 0) {
+                    // task doesn't exist, create a new one
+                    (0, core_1.info)('Creating new PR task');
+                    const task = yield client.tasks.create({
+                        workspace: ASANA_WORKSPACE_ID,
+                        // eslint-disable-next-line camelcase
+                        custom_fields: {
+                            [customFields.url.gid]: htmlUrl,
+                            [customFields.status.gid]: ((_b = (_a = customFields.status.enum_options) === null || _a === void 0 ? void 0 : _a.find(f => f.name === getPRState(payload.pull_request))) === null || _b === void 0 ? void 0 : _b.gid) || ''
+                        },
+                        notes: `${htmlUrl}`,
+                        name: `PR${payload.pull_request.number} - ${payload.pull_request.title}`,
+                        projects: [PROJECT_ID]
+                    });
+                    const sectionId = (0, core_1.getInput)('move_to_section_id');
+                    if (sectionId) {
+                        yield client.sections.addTask(sectionId, { task: task.gid });
+                    }
+                    // TODO: attachments
+                }
+                else {
+                    (0, core_1.info)(`Found task ${JSON.stringify(prTask.data[0])}`);
+                }
                 return;
             }
             (0, core_1.setFailed)('Can only run on PR events');
@@ -46,6 +77,37 @@ function run() {
                 (0, core_1.setFailed)(error.message);
         }
     });
+}
+function findCustomFields(workspaceGid) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const apiResponse = yield client.customFields.getCustomFieldsForWorkspace(workspaceGid);
+        // pull all fields from the API with the streaming
+        const stream = apiResponse.stream();
+        const customFields = [];
+        stream.on('data', field => {
+            customFields.push(field);
+        });
+        yield new Promise(resolve => stream.on('end', resolve));
+        const githubUrlField = customFields.find(f => f.name === CUSTOM_FIELD_NAMES.url);
+        const githubStatusField = customFields.find(f => f.name === CUSTOM_FIELD_NAMES.status);
+        if (!githubUrlField || !githubStatusField) {
+            (0, core_1.debug)(JSON.stringify(customFields));
+            throw new Error('Custom fields are missing. Please create them');
+        }
+        return {
+            url: githubUrlField,
+            status: githubStatusField
+        };
+    });
+}
+function getPRState(pr) {
+    if (pr.merged) {
+        return 'Merged';
+    }
+    if (pr.state === 'open') {
+        return 'Open';
+    }
+    return 'Closed';
 }
 run();
 
