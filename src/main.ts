@@ -19,7 +19,7 @@ const PROJECT_ID = getInput('ASANA_PROJECT_ID', {required: true})
 
 async function run(): Promise<void> {
   try {
-    info(`Event: ${context.eventName}`)
+    info(`Event: ${context.eventName}. Action: ${context.action}`)
     if (context.eventName === 'pull_request') {
       const payload = context.payload as PullRequestEvent
       const htmlUrl = payload.pull_request.html_url
