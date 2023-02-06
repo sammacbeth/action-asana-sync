@@ -1,6 +1,6 @@
 import asana, {Client} from 'asana'
 import {info, setFailed, getInput, debug} from '@actions/core'
-import {context, getOctokit} from '@actions/github'
+import {context} from '@actions/github'
 import {PullRequest, PullRequestEvent} from '@octokit/webhooks-types'
 
 const CUSTOM_FIELD_NAMES = {
@@ -20,7 +20,8 @@ const PROJECT_ID = getInput('ASANA_PROJECT_ID', {required: true})
 async function run(): Promise<void> {
   try {
     info(`Event: ${context.eventName}. Action: ${context.action}`)
-    if (context.eventName === 'pull_request') {
+    info(`${JSON.stringify(context.payload)}`)
+    if (['pull_request', 'pull_request_target'].includes(context.eventName)) {
       const payload = context.payload as PullRequestEvent
       const htmlUrl = payload.pull_request.html_url
       info(`PR url: ${htmlUrl}`)
