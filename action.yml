@@ -2,9 +2,9 @@ name: 'Asana Sync'
 description: 'Sync Github PRs to Asana Tasks'
 author: 'Sam Macbeth'
 inputs:
-  ASANA_WORKSPACE_ID:
-    required: false
-    description: 'Asana workspace ID'
+  ASANA_ACCESS_TOKEN:
+    required: true
+    description: 'Access token for Asana API calls'
 runs:
   using: 'node16'
   main: 'dist/index.js'

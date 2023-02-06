@@ -20,3 +20,5 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: ./
+        with:
+          ASANA_ACCESS_TOKEN: ${{ secrets.ASANA_ACCESS_TOKEN }}
