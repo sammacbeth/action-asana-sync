@@ -36,7 +36,7 @@ function run() {
         try {
             (0, core_1.info)(`Event: ${github_1.context.eventName}. Action: ${github_1.context.action}`);
             (0, core_1.info)(`${JSON.stringify(github_1.context.payload)}`);
-            if (github_1.context.eventName === 'pull_request') {
+            if (['pull_request', 'pull_request_target'].includes(github_1.context.eventName)) {
                 const payload = github_1.context.payload;
                 const htmlUrl = payload.pull_request.html_url;
                 (0, core_1.info)(`PR url: ${htmlUrl}`);

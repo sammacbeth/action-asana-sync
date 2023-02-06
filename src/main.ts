@@ -21,7 +21,7 @@ async function run(): Promise<void> {
   try {
     info(`Event: ${context.eventName}. Action: ${context.action}`)
     info(`${JSON.stringify(context.payload)}`)
-    if (context.eventName === 'pull_request') {
+    if (['pull_request', 'pull_request_target'].includes(context.eventName)) {
       const payload = context.payload as PullRequestEvent
       const htmlUrl = payload.pull_request.html_url
       info(`PR url: ${htmlUrl}`)
