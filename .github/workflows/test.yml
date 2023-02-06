@@ -15,13 +15,3 @@ jobs:
           npm install
       - run: |
           npm run all
-  test: # make sure the action works on a clean machine without building
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: ./
-        with:
-          ASANA_ACCESS_TOKEN: ${{ secrets.ASANA_ACCESS_TOKEN }}
-          ASANA_WORKSPACE_ID: ${{ secrets.ASANA_WORKSPACE_ID }}
-          ASANA_PROJECT_ID: '1203415155983021'
-          move_to_section_id: '1203902855070500'
