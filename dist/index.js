@@ -23,6 +23,7 @@ const CUSTOM_FIELD_NAMES = {
     url: 'Github URL',
     status: 'Github Status'
 };
+const octokit = (0, github_1.getOctokit)((0, core_1.getInput)('GITHUB_TOKEN'));
 const client = asana_1.Client.create({
     defaultHeaders: {
         'asana-enable': 'new_user_task_lists,new_project_templates'
@@ -40,6 +41,9 @@ function run() {
                 (0, core_1.info)(`PR url: ${htmlUrl}`);
                 (0, core_1.info)(`Action: ${payload.action}`);
                 const customFields = yield findCustomFields(ASANA_WORKSPACE_ID);
+                // PR metadata
+                const statusGid = ((_b = (_a = customFields.status.enum_options) === null || _a === void 0 ? void 0 : _a.find(f => f.name === getPRState(payload.pull_request))) === null || _b === void 0 ? void 0 : _b.gid) || '';
+                const title = `PR${payload.pull_request.number} - ${payload.pull_request.title}`;
                 // look for an existing task
                 const prTask = yield client.tasks.searchInWorkspace(ASANA_WORKSPACE_ID, {
                     [`custom_fields.${customFields.url.gid}.value`]: htmlUrl
@@ -52,10 +56,10 @@ function run() {
                         // eslint-disable-next-line camelcase
                         custom_fields: {
                             [customFields.url.gid]: htmlUrl,
-                            [customFields.status.gid]: ((_b = (_a = customFields.status.enum_options) === null || _a === void 0 ? void 0 : _a.find(f => f.name === getPRState(payload.pull_request))) === null || _b === void 0 ? void 0 : _b.gid) || ''
+                            [customFields.status.gid]: statusGid
                         },
                         notes: `${htmlUrl}`,
-                        name: `PR${payload.pull_request.number} - ${payload.pull_request.title}`,
+                        name: title,
                         projects: [PROJECT_ID]
                     });
                     const sectionId = (0, core_1.getInput)('move_to_section_id');
@@ -66,10 +70,18 @@ function run() {
                 }
                 else {
                     (0, core_1.info)(`Found task ${JSON.stringify(prTask.data[0])}`);
+                    const taskId = prTask.data[0].gid;
+                    yield client.tasks.updateTask(taskId, {
+                        name: title,
+                        // eslint-disable-next-line camelcase
+                        custom_fields: {
+                            [customFields.status.gid]: statusGid
+                        }
+                    });
                 }
                 return;
             }
-            (0, core_1.setFailed)('Can only run on PR events');
+            (0, core_1.info)('Only runs for PR changes');
             // core.setOutput('time', new Date().toTimeString())
         }
         catch (error) {
@@ -105,6 +117,9 @@ function getPRState(pr) {
         return 'Merged';
     }
     if (pr.state === 'open') {
+        if (pr.draft) {
+            return 'Draft';
+        }
         return 'Open';
     }
     return 'Closed';

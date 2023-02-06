@@ -1,6 +1,6 @@
 import asana, {Client} from 'asana'
 import {info, setFailed, getInput, debug} from '@actions/core'
-import {context} from '@actions/github'
+import {context, getOctokit} from '@actions/github'
 import {PullRequest, PullRequestEvent} from '@octokit/webhooks-types'
 
 const CUSTOM_FIELD_NAMES = {
@@ -8,8 +8,8 @@ const CUSTOM_FIELD_NAMES = {
   status: 'Github Status'
 }
 
-type PRState = 'Open' | 'Closed' | 'Merged'
-
+type PRState = 'Open' | 'Closed' | 'Merged' | 'Approved' | 'Draft'
+const octokit = getOctokit(getInput('GITHUB_TOKEN'))
 const client = Client.create({
   defaultHeaders: {
     'asana-enable': 'new_user_task_lists,new_project_templates'
@@ -27,6 +27,13 @@ async function run(): Promise<void> {
       info(`Action: ${payload.action}`)
       const customFields = await findCustomFields(ASANA_WORKSPACE_ID)
 
+      // PR metadata
+      const statusGid =
+        customFields.status.enum_options?.find(
+          f => f.name === getPRState(payload.pull_request)
+        )?.gid || ''
+      const title = `PR${payload.pull_request.number} - ${payload.pull_request.title}`
+
       // look for an existing task
       const prTask = await client.tasks.searchInWorkspace(ASANA_WORKSPACE_ID, {
         [`custom_fields.${customFields.url.gid}.value`]: htmlUrl
@@ -39,13 +46,10 @@ async function run(): Promise<void> {
           // eslint-disable-next-line camelcase
           custom_fields: {
             [customFields.url.gid]: htmlUrl,
-            [customFields.status.gid]:
-              customFields.status.enum_options?.find(
-                f => f.name === getPRState(payload.pull_request)
-              )?.gid || ''
+            [customFields.status.gid]: statusGid
           },
           notes: `${htmlUrl}`,
-          name: `PR${payload.pull_request.number} - ${payload.pull_request.title}`,
+          name: title,
           projects: [PROJECT_ID]
         })
         const sectionId = getInput('move_to_section_id')
@@ -55,10 +59,18 @@ async function run(): Promise<void> {
         // TODO: attachments
       } else {
         info(`Found task ${JSON.stringify(prTask.data[0])}`)
+        const taskId = prTask.data[0].gid
+        await client.tasks.updateTask(taskId, {
+          name: title,
+          // eslint-disable-next-line camelcase
+          custom_fields: {
+            [customFields.status.gid]: statusGid
+          }
+        })
       }
       return
     }
-    setFailed('Can only run on PR events')
+    info('Only runs for PR changes')
     // core.setOutput('time', new Date().toTimeString())
   } catch (error) {
     if (error instanceof Error) setFailed(error.message)
@@ -98,6 +110,9 @@ function getPRState(pr: PullRequest): PRState {
     return 'Merged'
   }
   if (pr.state === 'open') {
+    if (pr.draft) {
+      return 'Draft'
+    }
     return 'Open'
   }
   return 'Closed'
