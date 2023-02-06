@@ -9,7 +9,7 @@ on:
       - synchronize
 
 jobs:
-  sync: # make sure the action works on a clean machine without building
+  sync:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
