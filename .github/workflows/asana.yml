@@ -1,11 +1,12 @@
 name: 'asana sync'
 on:
   pull_request_target:
-    - opened
-    - edited
-    - closed
-    - reopened
-    - synchronize
+    types:
+      - opened
+      - edited
+      - closed
+      - reopened
+      - synchronize
 
 jobs:
   sync: # make sure the action works on a clean machine without building
