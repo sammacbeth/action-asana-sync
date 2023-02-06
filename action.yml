@@ -1,11 +1,19 @@
-name: 'Your name here'
-description: 'Provide a description here'
-author: 'Your name or organization here'
+name: 'Asana Sync'
+description: 'Sync Github PRs to Asana Tasks'
+author: 'Sam Macbeth'
 inputs:
-  milliseconds: # change this
+  ASANA_ACCESS_TOKEN:
     required: true
-    description: 'input description here'
-    default: 'default value if applicable'
+    description: 'Access token for Asana API calls'
+  ASANA_WORKSPACE_ID:
+    required: true
+    description: 'ID of your Asana workspace'
+  ASANA_PROJECT_ID:
+    required: true
+    description: 'Project ID where issues should be created in Asana'
+  move_to_section_id:
+    required: false
+    description: 'If set: move the task to this section after creation'
 runs:
   using: 'node16'
   main: 'dist/index.js'
