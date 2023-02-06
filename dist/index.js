@@ -34,7 +34,7 @@ function run() {
     var _a, _b;
     return __awaiter(this, void 0, void 0, function* () {
         try {
-            (0, core_1.info)(`Event: ${github_1.context.eventName}`);
+            (0, core_1.info)(`Event: ${github_1.context.eventName}. Action: ${github_1.context.action}`);
             if (github_1.context.eventName === 'pull_request') {
                 const payload = github_1.context.payload;
                 const htmlUrl = payload.pull_request.html_url;
