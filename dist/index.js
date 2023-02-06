@@ -23,7 +23,6 @@ const CUSTOM_FIELD_NAMES = {
     url: 'Github URL',
     status: 'Github Status'
 };
-const octokit = (0, github_1.getOctokit)((0, core_1.getInput)('GITHUB_TOKEN'));
 const client = asana_1.Client.create({
     defaultHeaders: {
         'asana-enable': 'new_user_task_lists,new_project_templates'
@@ -35,6 +34,7 @@ function run() {
     var _a, _b;
     return __awaiter(this, void 0, void 0, function* () {
         try {
+            (0, core_1.info)(`Event: ${github_1.context.eventName}`);
             if (github_1.context.eventName === 'pull_request') {
                 const payload = github_1.context.payload;
                 const htmlUrl = payload.pull_request.html_url;

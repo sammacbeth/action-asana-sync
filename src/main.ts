@@ -9,7 +9,6 @@ const CUSTOM_FIELD_NAMES = {
 }
 
 type PRState = 'Open' | 'Closed' | 'Merged' | 'Approved' | 'Draft'
-const octokit = getOctokit(getInput('GITHUB_TOKEN'))
 const client = Client.create({
   defaultHeaders: {
     'asana-enable': 'new_user_task_lists,new_project_templates'
@@ -20,6 +19,7 @@ const PROJECT_ID = getInput('ASANA_PROJECT_ID', {required: true})
 
 async function run(): Promise<void> {
   try {
+    info(`Event: ${context.eventName}`)
     if (context.eventName === 'pull_request') {
       const payload = context.payload as PullRequestEvent
       const htmlUrl = payload.pull_request.html_url
