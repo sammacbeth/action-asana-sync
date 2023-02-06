@@ -1,20 +1,21 @@
-import * as core from '@actions/core'
-import * as github from '@actions/github'
+import {info, setFailed} from '@actions/core'
+import {context} from '@actions/github'
 import {PullRequestEvent} from '@octokit/webhooks-types'
 
 async function run(): Promise<void> {
   try {
-    if (github.context.eventName === 'pull_request') {
-      const payload = github.context.payload as PullRequestEvent
-      const url = payload.pull_request.url
-      core.info(`PR url: ${JSON.stringify(payload.pull_request)}`)
-      core.info(`Action: ${payload.action}`)
+    if (context.eventName === 'pull_request') {
+      const payload = context.payload as PullRequestEvent
+      const url = payload.pull_request.html_url
+      info(`PR url: ${url}`)
+      info(`Action: ${payload.action}`)
+
       return
     }
-    core.setFailed('Can only run on PR events')
+    setFailed('Can only run on PR events')
     // core.setOutput('time', new Date().toTimeString())
   } catch (error) {
-    if (error instanceof Error) core.setFailed(error.message)
+    if (error instanceof Error) setFailed(error.message)
   }
 }
 
