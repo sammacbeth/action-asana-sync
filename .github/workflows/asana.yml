@@ -1,6 +1,6 @@
-name: 'asana sync'
+name: "asana sync"
 on:
-  pull_request_target:
+  pull_request:
     types:
       - opened
       - edited
@@ -10,12 +10,11 @@ on:
 
 jobs:
   sync:
-    runs-on: ubuntu-latest
+    runs-on: default
     steps:
       - uses: actions/checkout@v3
       - uses: ./
         with:
-          ASANA_ACCESS_TOKEN: ${{ secrets.ASANA_ACCESS_TOKEN }}
+          ASANA_ACCESS_TOKEN: ${{ secrets.DAX_ASANA_AUTH_TOKEN }}
           ASANA_WORKSPACE_ID: ${{ secrets.ASANA_WORKSPACE_ID }}
-          ASANA_PROJECT_ID: '1203415155983021'
-          move_to_section_id: '1203902855070500'
+          ASANA_PROJECT_ID: "1204969954708911"
