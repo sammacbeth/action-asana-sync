@@ -17,6 +17,13 @@ const client = Client.create({
 const ASANA_WORKSPACE_ID = getInput('ASANA_WORKSPACE_ID', {required: true})
 const PROJECT_ID = getInput('ASANA_PROJECT_ID', {required: true})
 
+async function createReviewSubTasks(taskId: string): Promise<void> {
+  info(`Creating review subtasks for task ${taskId}`)
+  const subtask = await client.tasks.addSubtask(taskId, {
+    name: 'Review request: test this!'
+  })
+}
+
 async function run(): Promise<void> {
   try {
     info(`Event: ${context.eventName}.`)
@@ -67,6 +74,7 @@ async function run(): Promise<void> {
             [customFields.status.gid]: statusGid
           }
         })
+        await createReviewSubTasks(taskId)
       }
       return
     }

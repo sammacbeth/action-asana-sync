@@ -30,6 +30,14 @@ const client = asana_1.Client.create({
 }).useAccessToken((0, core_1.getInput)('ASANA_ACCESS_TOKEN', { required: true }));
 const ASANA_WORKSPACE_ID = (0, core_1.getInput)('ASANA_WORKSPACE_ID', { required: true });
 const PROJECT_ID = (0, core_1.getInput)('ASANA_PROJECT_ID', { required: true });
+function createReviewSubTasks(taskId) {
+    return __awaiter(this, void 0, void 0, function* () {
+        (0, core_1.info)(`Creating review subtasks for task ${taskId}`);
+        const subtask = yield client.tasks.addSubtask(taskId, {
+            name: 'Review request: test this!'
+        });
+    });
+}
 function run() {
     var _a, _b;
     return __awaiter(this, void 0, void 0, function* () {
@@ -78,6 +86,7 @@ function run() {
                             [customFields.status.gid]: statusGid
                         }
                     });
+                    yield createReviewSubTasks(taskId);
                 }
                 return;
             }
