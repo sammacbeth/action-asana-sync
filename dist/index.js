@@ -25,7 +25,7 @@ const CUSTOM_FIELD_NAMES = {
 };
 const client = asana_1.Client.create({
     defaultHeaders: {
-        'asana-enable': 'new_user_task_lists,new_project_templates'
+        'asana-enable': 'new_user_task_lists,new_project_templates,new_goal_memberships'
     }
 }).useAccessToken((0, core_1.getInput)('ASANA_ACCESS_TOKEN', { required: true }));
 const ASANA_WORKSPACE_ID = (0, core_1.getInput)('ASANA_WORKSPACE_ID', { required: true });
@@ -33,9 +33,40 @@ const PROJECT_ID = (0, core_1.getInput)('ASANA_PROJECT_ID', { required: true });
 function createReviewSubTasks(taskId) {
     return __awaiter(this, void 0, void 0, function* () {
         (0, core_1.info)(`Creating review subtasks for task ${taskId}`);
-        const subtask = yield client.tasks.addSubtask(taskId, {
-            name: 'Review request: test this!'
-        });
+        const payload = github_1.context.payload;
+        const requestor = payload.sender.login;
+        const reviewers = payload.pull_request.requested_reviewers;
+        const subtasks = yield client.tasks.subtasks(taskId);
+        for (let reviewer of reviewers) {
+            // TODO fix for teams
+            reviewer = reviewer;
+            // TODO reviewer.email exists but is not always available?
+            const reviewerEmail = `${reviewer.login}@duckduckgo.com`;
+            let reviewSubtask;
+            for (let subtask of subtasks.data) {
+                (0, core_1.info)(`Checking subtask ${subtask.gid} assignee`);
+                subtask = yield client.tasks.findById(subtask.gid);
+                if (!subtask.assignee) {
+                    (0, core_1.info)(`Task ${subtask.gid} has no assignee`);
+                    continue;
+                }
+                const asanaUser = yield client.users.findById(subtask.assignee.gid);
+                if (asanaUser.email === reviewerEmail) {
+                    (0, core_1.info)(`Found existing review task for ${subtask.gid} and ${asanaUser.email}`);
+                    reviewSubtask = subtask;
+                    break;
+                }
+            }
+            (0, core_1.info)(`Subtask for ${reviewerEmail}: ${JSON.stringify(reviewSubtask)}`);
+            if (!reviewSubtask) {
+                (0, core_1.info)(`Creating review subtask for ${reviewerEmail}`);
+                const subtask = yield client.tasks.addSubtask(taskId, {
+                    name: 'Review Request: ',
+                    assignee: reviewerEmail,
+                    followers: [requestor]
+                });
+            }
+        }
     });
 }
 function run() {
@@ -74,6 +105,7 @@ function run() {
                     if (sectionId) {
                         yield client.sections.addTask(sectionId, { task: task.gid });
                     }
+                    yield createReviewSubTasks(task.gid);
                     // TODO: attachments
                 }
                 else {

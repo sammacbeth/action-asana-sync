@@ -1,7 +1,12 @@
 import asana, {Client} from 'asana'
 import {info, setFailed, getInput, debug} from '@actions/core'
 import {context} from '@actions/github'
-import {PullRequest, PullRequestEvent} from '@octokit/webhooks-types'
+import {
+  PullRequest,
+  PullRequestEvent,
+  User,
+  Team
+} from '@octokit/webhooks-types'
 
 const CUSTOM_FIELD_NAMES = {
   url: 'Github URL',
@@ -11,7 +16,8 @@ const CUSTOM_FIELD_NAMES = {
 type PRState = 'Open' | 'Closed' | 'Merged' | 'Approved' | 'Draft'
 const client = Client.create({
   defaultHeaders: {
-    'asana-enable': 'new_user_task_lists,new_project_templates'
+    'asana-enable':
+      'new_user_task_lists,new_project_templates,new_goal_memberships'
   }
 }).useAccessToken(getInput('ASANA_ACCESS_TOKEN', {required: true}))
 const ASANA_WORKSPACE_ID = getInput('ASANA_WORKSPACE_ID', {required: true})
@@ -19,9 +25,43 @@ const PROJECT_ID = getInput('ASANA_PROJECT_ID', {required: true})
 
 async function createReviewSubTasks(taskId: string): Promise<void> {
   info(`Creating review subtasks for task ${taskId}`)
-  const subtask = await client.tasks.addSubtask(taskId, {
-    name: 'Review request: test this!'
-  })
+  const payload = context.payload as PullRequestEvent
+  const requestor = payload.sender.login
+  const reviewers = payload.pull_request.requested_reviewers
+  const subtasks = await client.tasks.subtasks(taskId)
+  for (let reviewer of reviewers) {
+    // TODO fix for teams
+    reviewer = reviewer as User
+
+    // TODO reviewer.email exists but is not always available?
+    const reviewerEmail = `${reviewer.login}@duckduckgo.com`
+    let reviewSubtask
+    for (let subtask of subtasks.data) {
+      info(`Checking subtask ${subtask.gid} assignee`)
+      subtask = await client.tasks.findById(subtask.gid)
+      if (!subtask.assignee) {
+        info(`Task ${subtask.gid} has no assignee`)
+        continue
+      }
+      const asanaUser = await client.users.findById(subtask.assignee.gid)
+      if (asanaUser.email === reviewerEmail) {
+        info(
+          `Found existing review task for ${subtask.gid} and ${asanaUser.email}`
+        )
+        reviewSubtask = subtask
+        break
+      }
+    }
+    info(`Subtask for ${reviewerEmail}: ${JSON.stringify(reviewSubtask)}`)
+    if (!reviewSubtask) {
+      info(`Creating review subtask for ${reviewerEmail}`)
+      const subtask = await client.tasks.addSubtask(taskId, {
+        name: 'Review Request: ',
+        assignee: reviewerEmail,
+        followers: [requestor]
+      })
+    }
+  }
 }
 
 async function run(): Promise<void> {
@@ -63,6 +103,7 @@ async function run(): Promise<void> {
         if (sectionId) {
           await client.sections.addTask(sectionId, {task: task.gid})
         }
+        await createReviewSubTasks(task.gid)
         // TODO: attachments
       } else {
         info(`Found task ${JSON.stringify(prTask.data[0])}`)
