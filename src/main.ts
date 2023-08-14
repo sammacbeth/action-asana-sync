@@ -114,7 +114,9 @@ async function run(): Promise<void> {
             [customFields.url.gid]: htmlUrl,
             [customFields.status.gid]: statusGid
           },
-          notes: `${htmlUrl}`,
+          notes: `${htmlUrl}
+
+${payload.pull_request.body}`,
           name: title,
           projects: [PROJECT_ID]
         })
@@ -129,6 +131,9 @@ async function run(): Promise<void> {
         const taskId = prTask.data[0].gid
         await client.tasks.updateTask(taskId, {
           name: title,
+          notes: `${htmlUrl}
+
+${payload.pull_request.body}`,
           // eslint-disable-next-line camelcase
           custom_fields: {
             [customFields.status.gid]: statusGid

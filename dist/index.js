@@ -126,7 +126,9 @@ function run() {
                             [customFields.url.gid]: htmlUrl,
                             [customFields.status.gid]: statusGid
                         },
-                        notes: `${htmlUrl}`,
+                        notes: `${htmlUrl}
+
+${payload.pull_request.body}`,
                         name: title,
                         projects: [PROJECT_ID]
                     });
@@ -142,6 +144,9 @@ function run() {
                     const taskId = prTask.data[0].gid;
                     yield client.tasks.updateTask(taskId, {
                         name: title,
+                        notes: `${htmlUrl}
+
+${payload.pull_request.body}`,
                         // eslint-disable-next-line camelcase
                         custom_fields: {
                             [customFields.status.gid]: statusGid
