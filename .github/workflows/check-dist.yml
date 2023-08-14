@@ -10,23 +10,20 @@ on:
     branches:
       - main
     paths-ignore:
-      - '**.md'
+      - "**.md"
   pull_request:
     paths-ignore:
-      - '**.md'
+      - "**.md"
   workflow_dispatch:
 
 jobs:
   check-dist:
-    runs-on: ubuntu-latest
+    runs-on: default
+    env:
+      NODENV_VERSION: "16.16.0"
 
     steps:
       - uses: actions/checkout@v3
-
-      - name: Set Node.js 16.x
-        uses: actions/setup-node@v3.6.0
-        with:
-          node-version: 16.x
 
       - name: Install dependencies
         run: npm ci

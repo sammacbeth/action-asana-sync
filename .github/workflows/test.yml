@@ -1,14 +1,16 @@
-name: 'build-test'
+name: "build-test"
 on: # rebuild any PRs
   pull_request:
   push:
     branches:
       - main
-      - 'releases/*'
+      - "releases/*"
 
 jobs:
   build: # make sure build/ci work properly
-    runs-on: ubuntu-latest
+    runs-on: default
+    env:
+      NODENV_VERSION: "16.16.0"
     steps:
       - uses: actions/checkout@v3
       - run: |

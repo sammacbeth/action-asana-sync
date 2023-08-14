@@ -1,7 +1,12 @@
 import asana, {Client} from 'asana'
 import {info, setFailed, getInput, debug} from '@actions/core'
 import {context} from '@actions/github'
-import {PullRequest, PullRequestEvent} from '@octokit/webhooks-types'
+import {
+  PullRequest,
+  PullRequestEvent,
+  User,
+  Team
+} from '@octokit/webhooks-types'
 
 const CUSTOM_FIELD_NAMES = {
   url: 'Github URL',
@@ -11,11 +16,68 @@ const CUSTOM_FIELD_NAMES = {
 type PRState = 'Open' | 'Closed' | 'Merged' | 'Approved' | 'Draft'
 const client = Client.create({
   defaultHeaders: {
-    'asana-enable': 'new_user_task_lists,new_project_templates'
+    'asana-enable':
+      'new_user_task_lists,new_project_templates,new_goal_memberships'
   }
 }).useAccessToken(getInput('ASANA_ACCESS_TOKEN', {required: true}))
 const ASANA_WORKSPACE_ID = getInput('ASANA_WORKSPACE_ID', {required: true})
 const PROJECT_ID = getInput('ASANA_PROJECT_ID', {required: true})
+
+function getUserFromLogin(login: string): string {
+  return `${login}@duckduckgo.com`
+}
+
+async function createReviewSubTasks(taskId: string): Promise<void> {
+  info(`Creating review subtasks for task ${taskId}`)
+  const payload = context.payload as PullRequestEvent
+  const requestor = getUserFromLogin(payload.sender.login)
+  const reviewers = payload.pull_request.requested_reviewers
+  const title = payload.pull_request.title
+  const subtasks = await client.tasks.subtasks(taskId)
+  for (let reviewer of reviewers) {
+    // TODO do we need to fix for teams?
+    reviewer = reviewer as User
+
+    // TODO reviewer.email exists but is not always "filled in"?
+    const reviewerEmail = getUserFromLogin(reviewer.login)
+    let reviewSubtask
+    for (let subtask of subtasks.data) {
+      info(`Checking subtask ${subtask.gid} assignee`)
+      subtask = await client.tasks.findById(subtask.gid)
+      if (!subtask.assignee) {
+        info(`Task ${subtask.gid} has no assignee`)
+        continue
+      }
+      const asanaUser = await client.users.findById(subtask.assignee.gid)
+      if (asanaUser.email === reviewerEmail) {
+        info(
+          `Found existing review task for ${subtask.gid} and ${asanaUser.email}`
+        )
+        reviewSubtask = subtask
+        break
+      }
+    }
+    info(`Subtask for ${reviewerEmail}: ${JSON.stringify(reviewSubtask)}`)
+    const subtaskObj = {
+      name: `Review Request: ${title}`,
+      notes: `${requestor} requested your code review of ${payload.pull_request.html_url}.
+
+Please review changes and close this subtask once done.`,
+      assignee: reviewerEmail,
+      followers: [requestor, reviewerEmail],
+      completed: false
+    }
+    if (!reviewSubtask) {
+      info(`Creating review subtask for ${reviewerEmail}`)
+      info(`Requestor: ${requestor}`)
+      await client.tasks.addSubtask(taskId, subtaskObj)
+    } else {
+      // This reopens existing task
+      const {followers, ...otherProps} = subtaskObj
+      await client.tasks.updateTask(reviewSubtask.gid, otherProps)
+    }
+  }
+}
 
 async function run(): Promise<void> {
   try {
@@ -32,7 +94,7 @@ async function run(): Promise<void> {
         customFields.status.enum_options?.find(
           f => f.name === getPRState(payload.pull_request)
         )?.gid || ''
-      const title = `PR${payload.pull_request.number} - ${payload.pull_request.title}`
+      const title = `${payload.repository.full_name}#${payload.pull_request.number} - ${payload.pull_request.title}`
 
       // look for an existing task
       const prTask = await client.tasks.searchInWorkspace(ASANA_WORKSPACE_ID, {
@@ -56,6 +118,7 @@ async function run(): Promise<void> {
         if (sectionId) {
           await client.sections.addTask(sectionId, {task: task.gid})
         }
+        await createReviewSubTasks(task.gid)
         // TODO: attachments
       } else {
         info(`Found task ${JSON.stringify(prTask.data[0])}`)
@@ -67,6 +130,7 @@ async function run(): Promise<void> {
             [customFields.status.gid]: statusGid
           }
         })
+        await createReviewSubTasks(taskId)
       }
       return
     }
