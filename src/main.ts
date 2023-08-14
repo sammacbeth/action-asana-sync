@@ -131,6 +131,7 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`
           projects: [PROJECT_ID]
         })
         setOutput('task_id', task.gid)
+        setOutput('result', 'created')
         const sectionId = getInput('move_to_section_id')
         if (sectionId) {
           await client.sections.addTask(sectionId, {task: task.gid})
@@ -141,6 +142,7 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`
         info(`Found task ${JSON.stringify(prTask.data[0])}`)
         const taskId = prTask.data[0].gid
         setOutput('task_id', taskId)
+        setOutput('result', 'updated')
         await client.tasks.updateTask(taskId, {
           name: title,
           notes,

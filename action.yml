@@ -17,6 +17,8 @@ inputs:
 outputs:
   task_id:
     description: Task ID created/updated by this action
+  result:
+    description: "Will be one of: created, updated"
 runs:
   using: "node16"
   main: "dist/index.js"
