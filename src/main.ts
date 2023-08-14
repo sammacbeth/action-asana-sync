@@ -130,7 +130,7 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`
           name: title,
           projects: [PROJECT_ID]
         })
-        setOutput('task_id', task.gid)
+        setOutput('task_url', task.permalink_url)
         setOutput('result', 'created')
         const sectionId = getInput('move_to_section_id')
         if (sectionId) {
@@ -141,7 +141,7 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`
       } else {
         info(`Found task ${JSON.stringify(prTask.data[0])}`)
         const taskId = prTask.data[0].gid
-        setOutput('task_id', taskId)
+        setOutput('task_url', prTask.data[0].permalink_url)
         setOutput('result', 'updated')
         await client.tasks.updateTask(taskId, {
           name: title,

@@ -15,8 +15,8 @@ inputs:
     required: false
     description: "If set: move the task to this section after creation"
 outputs:
-  task_id:
-    description: Task ID created/updated by this action
+  task_url:
+    description: URL of created/updated PR review task
   result:
     description: "Will be one of: created, updated"
 runs:
