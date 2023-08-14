@@ -109,6 +109,9 @@ function run() {
                 // PR metadata
                 const statusGid = ((_b = (_a = customFields.status.enum_options) === null || _a === void 0 ? void 0 : _a.find(f => f.name === getPRState(payload.pull_request))) === null || _b === void 0 ? void 0 : _b.gid) || '';
                 const title = `${payload.repository.full_name}#${payload.pull_request.number} - ${payload.pull_request.title}`;
+                if (title.startsWith('Release: ')) {
+                    return;
+                }
                 // look for an existing task
                 const prTask = yield client.tasks.searchInWorkspace(ASANA_WORKSPACE_ID, {
                     [`custom_fields.${customFields.url.gid}.value`]: htmlUrl

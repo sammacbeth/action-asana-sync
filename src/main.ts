@@ -96,6 +96,10 @@ async function run(): Promise<void> {
         )?.gid || ''
       const title = `${payload.repository.full_name}#${payload.pull_request.number} - ${payload.pull_request.title}`
 
+      if (title.startsWith('Release: ')) {
+        return
+      }
+
       // look for an existing task
       const prTask = await client.tasks.searchInWorkspace(ASANA_WORKSPACE_ID, {
         [`custom_fields.${customFields.url.gid}.value`]: htmlUrl
