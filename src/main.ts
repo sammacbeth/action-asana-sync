@@ -58,16 +58,23 @@ async function createReviewSubTasks(taskId: string): Promise<void> {
       }
     }
     info(`Subtask for ${reviewerEmail}: ${JSON.stringify(reviewSubtask)}`)
-    // TODO reopen existing review tasks if closed? As-is we don't reopen and
-    // don't create a new review task
+    const subtaskObj = {
+      name: `Review Request: ${title}`,
+      notes: `${requestor} requested your code review of ${payload.pull_request.html_url}.
+
+Please review changes and close this subtask once done.`,
+      assignee: reviewerEmail,
+      followers: [requestor, reviewerEmail],
+      completed: false
+    }
     if (!reviewSubtask) {
       info(`Creating review subtask for ${reviewerEmail}`)
       info(`Requestor: ${requestor}`)
-      const subtask = await client.tasks.addSubtask(taskId, {
-        name: `Review Request: ${title}`,
-        assignee: reviewerEmail,
-        followers: [requestor]
-      })
+      await client.tasks.addSubtask(taskId, subtaskObj)
+    } else {
+      // This reopens existing task
+      const {followers, ...otherProps} = subtaskObj
+      await client.tasks.updateTask(reviewSubtask.gid, otherProps)
     }
   }
 }
@@ -87,7 +94,7 @@ async function run(): Promise<void> {
         customFields.status.enum_options?.find(
           f => f.name === getPRState(payload.pull_request)
         )?.gid || ''
-      const title = `PR${payload.pull_request.number} - ${payload.pull_request.title}`
+      const title = `${payload.repository.full_name}#${payload.pull_request.number} - ${payload.pull_request.title}`
 
       // look for an existing task
       const prTask = await client.tasks.searchInWorkspace(ASANA_WORKSPACE_ID, {

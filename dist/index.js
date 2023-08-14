@@ -15,6 +15,17 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
+var __rest = (this && this.__rest) || function (s, e) {
+    var t = {};
+    for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p) && e.indexOf(p) < 0)
+        t[p] = s[p];
+    if (s != null && typeof Object.getOwnPropertySymbols === "function")
+        for (var i = 0, p = Object.getOwnPropertySymbols(s); i < p.length; i++) {
+            if (e.indexOf(p[i]) < 0 && Object.prototype.propertyIsEnumerable.call(s, p[i]))
+                t[p[i]] = s[p[i]];
+        }
+    return t;
+};
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 const asana_1 = __nccwpck_require__(3565);
 const core_1 = __nccwpck_require__(2186);
@@ -62,16 +73,24 @@ function createReviewSubTasks(taskId) {
                 }
             }
             (0, core_1.info)(`Subtask for ${reviewerEmail}: ${JSON.stringify(reviewSubtask)}`);
-            // TODO reopen existing review tasks if closed? As-is we don't reopen and
-            // don't create a new review task
+            const subtaskObj = {
+                name: `Review Request: ${title}`,
+                notes: `${requestor} requested your code review of ${payload.pull_request.html_url}.
+
+Please review changes and close this subtask once done.`,
+                assignee: reviewerEmail,
+                followers: [requestor, reviewerEmail],
+                completed: false
+            };
             if (!reviewSubtask) {
                 (0, core_1.info)(`Creating review subtask for ${reviewerEmail}`);
                 (0, core_1.info)(`Requestor: ${requestor}`);
-                const subtask = yield client.tasks.addSubtask(taskId, {
-                    name: `Review Request: ${title}`,
-                    assignee: reviewerEmail,
-                    followers: [requestor]
-                });
+                yield client.tasks.addSubtask(taskId, subtaskObj);
+            }
+            else {
+                // This reopens existing task
+                const { followers } = subtaskObj, otherProps = __rest(subtaskObj, ["followers"]);
+                yield client.tasks.updateTask(reviewSubtask.gid, otherProps);
             }
         }
     });
@@ -89,7 +108,7 @@ function run() {
                 const customFields = yield findCustomFields(ASANA_WORKSPACE_ID);
                 // PR metadata
                 const statusGid = ((_b = (_a = customFields.status.enum_options) === null || _a === void 0 ? void 0 : _a.find(f => f.name === getPRState(payload.pull_request))) === null || _b === void 0 ? void 0 : _b.gid) || '';
-                const title = `PR${payload.pull_request.number} - ${payload.pull_request.title}`;
+                const title = `${payload.repository.full_name}#${payload.pull_request.number} - ${payload.pull_request.title}`;
                 // look for an existing task
                 const prTask = yield client.tasks.searchInWorkspace(ASANA_WORKSPACE_ID, {
                     [`custom_fields.${customFields.url.gid}.value`]: htmlUrl
