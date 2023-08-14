@@ -105,9 +105,17 @@ async function run(): Promise<void> {
       const prTask = await client.tasks.searchInWorkspace(ASANA_WORKSPACE_ID, {
         [`custom_fields.${customFields.url.gid}.value`]: htmlUrl
       })
+      const notes = `
+Note: This description is automatically updated from Github. Changes will be LOST.
+
+${htmlUrl}
+
+PR content:
+${payload.pull_request.body}`
       if (prTask.data.length === 0) {
         // task doesn't exist, create a new one
         info('Creating new PR task')
+
         const task = await client.tasks.create({
           assignee: requestor,
           workspace: ASANA_WORKSPACE_ID,
@@ -116,9 +124,7 @@ async function run(): Promise<void> {
             [customFields.url.gid]: htmlUrl,
             [customFields.status.gid]: statusGid
           },
-          notes: `${htmlUrl}
-
-${payload.pull_request.body}`,
+          notes,
           name: title,
           projects: [PROJECT_ID]
         })
@@ -133,9 +139,7 @@ ${payload.pull_request.body}`,
         const taskId = prTask.data[0].gid
         await client.tasks.updateTask(taskId, {
           name: title,
-          notes: `${htmlUrl}
-
-${payload.pull_request.body}`,
+          notes,
           // eslint-disable-next-line camelcase
           custom_fields: {
             [customFields.status.gid]: statusGid

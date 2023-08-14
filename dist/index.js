@@ -117,6 +117,13 @@ function run() {
                 const prTask = yield client.tasks.searchInWorkspace(ASANA_WORKSPACE_ID, {
                     [`custom_fields.${customFields.url.gid}.value`]: htmlUrl
                 });
+                const notes = `
+Note: This description is automatically updated from Github. Changes will be LOST.
+
+${htmlUrl}
+
+PR content:
+${payload.pull_request.body}`;
                 if (prTask.data.length === 0) {
                     // task doesn't exist, create a new one
                     (0, core_1.info)('Creating new PR task');
@@ -128,9 +135,7 @@ function run() {
                             [customFields.url.gid]: htmlUrl,
                             [customFields.status.gid]: statusGid
                         },
-                        notes: `${htmlUrl}
-
-${payload.pull_request.body}`,
+                        notes,
                         name: title,
                         projects: [PROJECT_ID]
                     });
@@ -146,9 +151,7 @@ ${payload.pull_request.body}`,
                     const taskId = prTask.data[0].gid;
                     yield client.tasks.updateTask(taskId, {
                         name: title,
-                        notes: `${htmlUrl}
-
-${payload.pull_request.body}`,
+                        notes,
                         // eslint-disable-next-line camelcase
                         custom_fields: {
                             [customFields.status.gid]: statusGid
