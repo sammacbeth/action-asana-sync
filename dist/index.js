@@ -140,6 +140,7 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`;
                         name: title,
                         projects: [PROJECT_ID]
                     });
+                    (0, core_1.setOutput)('task_id', task.gid);
                     const sectionId = (0, core_1.getInput)('move_to_section_id');
                     if (sectionId) {
                         yield client.sections.addTask(sectionId, { task: task.gid });
@@ -150,6 +151,7 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`;
                 else {
                     (0, core_1.info)(`Found task ${JSON.stringify(prTask.data[0])}`);
                     const taskId = prTask.data[0].gid;
+                    (0, core_1.setOutput)('task_id', taskId);
                     yield client.tasks.updateTask(taskId, {
                         name: title,
                         notes,

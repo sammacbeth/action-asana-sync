@@ -1,5 +1,5 @@
 import asana, {Client} from 'asana'
-import {info, setFailed, getInput, debug} from '@actions/core'
+import {info, setFailed, getInput, debug, setOutput} from '@actions/core'
 import {context} from '@actions/github'
 import {
   PullRequest,
@@ -130,6 +130,7 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`
           name: title,
           projects: [PROJECT_ID]
         })
+        setOutput('task_id', task.gid)
         const sectionId = getInput('move_to_section_id')
         if (sectionId) {
           await client.sections.addTask(sectionId, {task: task.gid})
@@ -139,6 +140,7 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`
       } else {
         info(`Found task ${JSON.stringify(prTask.data[0])}`)
         const taskId = prTask.data[0].gid
+        setOutput('task_id', taskId)
         await client.tasks.updateTask(taskId, {
           name: title,
           notes,
