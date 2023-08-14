@@ -85,6 +85,7 @@ async function run(): Promise<void> {
     if (['pull_request', 'pull_request_target'].includes(context.eventName)) {
       const payload = context.payload as PullRequestEvent
       const htmlUrl = payload.pull_request.html_url
+      const requestor = getUserFromLogin(payload.sender.login)
       info(`PR url: ${htmlUrl}`)
       info(`Action: ${payload.action}`)
       const customFields = await findCustomFields(ASANA_WORKSPACE_ID)
@@ -108,6 +109,7 @@ async function run(): Promise<void> {
         // task doesn't exist, create a new one
         info('Creating new PR task')
         const task = await client.tasks.create({
+          assignee: requestor,
           workspace: ASANA_WORKSPACE_ID,
           // eslint-disable-next-line camelcase
           custom_fields: {

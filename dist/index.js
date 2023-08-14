@@ -103,6 +103,7 @@ function run() {
             if (['pull_request', 'pull_request_target'].includes(github_1.context.eventName)) {
                 const payload = github_1.context.payload;
                 const htmlUrl = payload.pull_request.html_url;
+                const requestor = getUserFromLogin(payload.sender.login);
                 (0, core_1.info)(`PR url: ${htmlUrl}`);
                 (0, core_1.info)(`Action: ${payload.action}`);
                 const customFields = yield findCustomFields(ASANA_WORKSPACE_ID);
@@ -120,6 +121,7 @@ function run() {
                     // task doesn't exist, create a new one
                     (0, core_1.info)('Creating new PR task');
                     const task = yield client.tasks.create({
+                        assignee: requestor,
                         workspace: ASANA_WORKSPACE_ID,
                         // eslint-disable-next-line camelcase
                         custom_fields: {
