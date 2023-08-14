@@ -30,18 +30,22 @@ const client = asana_1.Client.create({
 }).useAccessToken((0, core_1.getInput)('ASANA_ACCESS_TOKEN', { required: true }));
 const ASANA_WORKSPACE_ID = (0, core_1.getInput)('ASANA_WORKSPACE_ID', { required: true });
 const PROJECT_ID = (0, core_1.getInput)('ASANA_PROJECT_ID', { required: true });
+function getUserFromLogin(login) {
+    return `${login}@duckduckgo.com`;
+}
 function createReviewSubTasks(taskId) {
     return __awaiter(this, void 0, void 0, function* () {
         (0, core_1.info)(`Creating review subtasks for task ${taskId}`);
         const payload = github_1.context.payload;
-        const requestor = payload.sender.login;
+        const requestor = getUserFromLogin(payload.sender.login);
         const reviewers = payload.pull_request.requested_reviewers;
+        const title = payload.pull_request.title;
         const subtasks = yield client.tasks.subtasks(taskId);
         for (let reviewer of reviewers) {
-            // TODO fix for teams
+            // TODO do we need to fix for teams?
             reviewer = reviewer;
-            // TODO reviewer.email exists but is not always available?
-            const reviewerEmail = `${reviewer.login}@duckduckgo.com`;
+            // TODO reviewer.email exists but is not always "filled in"?
+            const reviewerEmail = getUserFromLogin(reviewer.login);
             let reviewSubtask;
             for (let subtask of subtasks.data) {
                 (0, core_1.info)(`Checking subtask ${subtask.gid} assignee`);
@@ -58,10 +62,13 @@ function createReviewSubTasks(taskId) {
                 }
             }
             (0, core_1.info)(`Subtask for ${reviewerEmail}: ${JSON.stringify(reviewSubtask)}`);
+            // TODO reopen existing review tasks if closed? As-is we don't reopen and
+            // don't create a new review task
             if (!reviewSubtask) {
                 (0, core_1.info)(`Creating review subtask for ${reviewerEmail}`);
+                (0, core_1.info)(`Requestor: ${requestor}`);
                 const subtask = yield client.tasks.addSubtask(taskId, {
-                    name: 'Review Request: ',
+                    name: `Review Request: ${title}`,
                     assignee: reviewerEmail,
                     followers: [requestor]
                 });

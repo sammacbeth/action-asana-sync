@@ -23,18 +23,23 @@ const client = Client.create({
 const ASANA_WORKSPACE_ID = getInput('ASANA_WORKSPACE_ID', {required: true})
 const PROJECT_ID = getInput('ASANA_PROJECT_ID', {required: true})
 
+function getUserFromLogin(login: string): string {
+  return `${login}@duckduckgo.com`
+}
+
 async function createReviewSubTasks(taskId: string): Promise<void> {
   info(`Creating review subtasks for task ${taskId}`)
   const payload = context.payload as PullRequestEvent
-  const requestor = payload.sender.login
+  const requestor = getUserFromLogin(payload.sender.login)
   const reviewers = payload.pull_request.requested_reviewers
+  const title = payload.pull_request.title
   const subtasks = await client.tasks.subtasks(taskId)
   for (let reviewer of reviewers) {
-    // TODO fix for teams
+    // TODO do we need to fix for teams?
     reviewer = reviewer as User
 
-    // TODO reviewer.email exists but is not always available?
-    const reviewerEmail = `${reviewer.login}@duckduckgo.com`
+    // TODO reviewer.email exists but is not always "filled in"?
+    const reviewerEmail = getUserFromLogin(reviewer.login)
     let reviewSubtask
     for (let subtask of subtasks.data) {
       info(`Checking subtask ${subtask.gid} assignee`)
@@ -53,10 +58,13 @@ async function createReviewSubTasks(taskId: string): Promise<void> {
       }
     }
     info(`Subtask for ${reviewerEmail}: ${JSON.stringify(reviewSubtask)}`)
+    // TODO reopen existing review tasks if closed? As-is we don't reopen and
+    // don't create a new review task
     if (!reviewSubtask) {
       info(`Creating review subtask for ${reviewerEmail}`)
+      info(`Requestor: ${requestor}`)
       const subtask = await client.tasks.addSubtask(taskId, {
-        name: 'Review Request: ',
+        name: `Review Request: ${title}`,
         assignee: reviewerEmail,
         followers: [requestor]
       })
