@@ -110,6 +110,7 @@ function run() {
                 // PR metadata
                 const statusGid = ((_b = (_a = customFields.status.enum_options) === null || _a === void 0 ? void 0 : _a.find(f => f.name === getPRState(payload.pull_request))) === null || _b === void 0 ? void 0 : _b.gid) || '';
                 const title = `${payload.repository.full_name}#${payload.pull_request.number} - ${payload.pull_request.title}`;
+                const body = payload.pull_request.body || 'Empty description';
                 if (title.startsWith('Release: ')) {
                     return;
                 }
@@ -123,7 +124,7 @@ Note: This description is automatically updated from Github. Changes will be LOS
 ${htmlUrl}
 
 PR content:
-${payload.pull_request.body}`;
+${body.replace(/^---$[\s\S]*/gm, '')}`;
                 if (prTask.data.length === 0) {
                     // task doesn't exist, create a new one
                     (0, core_1.info)('Creating new PR task');

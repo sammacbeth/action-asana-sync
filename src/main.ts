@@ -96,6 +96,7 @@ async function run(): Promise<void> {
           f => f.name === getPRState(payload.pull_request)
         )?.gid || ''
       const title = `${payload.repository.full_name}#${payload.pull_request.number} - ${payload.pull_request.title}`
+      const body = payload.pull_request.body || 'Empty description'
 
       if (title.startsWith('Release: ')) {
         return
@@ -105,13 +106,14 @@ async function run(): Promise<void> {
       const prTask = await client.tasks.searchInWorkspace(ASANA_WORKSPACE_ID, {
         [`custom_fields.${customFields.url.gid}.value`]: htmlUrl
       })
+
       const notes = `
 Note: This description is automatically updated from Github. Changes will be LOST.
 
 ${htmlUrl}
 
 PR content:
-${payload.pull_request.body}`
+${body.replace(/^---$[\s\S]*/gm, '')}`
       if (prTask.data.length === 0) {
         // task doesn't exist, create a new one
         info('Creating new PR task')
