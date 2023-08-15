@@ -1,5 +1,5 @@
 import asana, {Client} from 'asana'
-import {info, setFailed, getInput, debug} from '@actions/core'
+import {info, setFailed, getInput, debug, setOutput} from '@actions/core'
 import {context} from '@actions/github'
 import {
   PullRequest,
@@ -85,6 +85,7 @@ async function run(): Promise<void> {
     if (['pull_request', 'pull_request_target'].includes(context.eventName)) {
       const payload = context.payload as PullRequestEvent
       const htmlUrl = payload.pull_request.html_url
+      const requestor = getUserFromLogin(payload.sender.login)
       info(`PR url: ${htmlUrl}`)
       info(`Action: ${payload.action}`)
       const customFields = await findCustomFields(ASANA_WORKSPACE_ID)
@@ -95,6 +96,7 @@ async function run(): Promise<void> {
           f => f.name === getPRState(payload.pull_request)
         )?.gid || ''
       const title = `${payload.repository.full_name}#${payload.pull_request.number} - ${payload.pull_request.title}`
+      const body = payload.pull_request.body || 'Empty description'
 
       if (title.startsWith('Release: ')) {
         return
@@ -104,20 +106,32 @@ async function run(): Promise<void> {
       const prTask = await client.tasks.searchInWorkspace(ASANA_WORKSPACE_ID, {
         [`custom_fields.${customFields.url.gid}.value`]: htmlUrl
       })
+
+      const notes = `
+Note: This description is automatically updated from Github. Changes will be LOST.
+
+${htmlUrl}
+
+PR content:
+${body.replace(/^---$[\s\S]*/gm, '')}`
       if (prTask.data.length === 0) {
         // task doesn't exist, create a new one
         info('Creating new PR task')
+
         const task = await client.tasks.create({
+          assignee: requestor,
           workspace: ASANA_WORKSPACE_ID,
           // eslint-disable-next-line camelcase
           custom_fields: {
             [customFields.url.gid]: htmlUrl,
             [customFields.status.gid]: statusGid
           },
-          notes: `${htmlUrl}`,
+          notes,
           name: title,
           projects: [PROJECT_ID]
         })
+        setOutput('task_url', task.permalink_url)
+        setOutput('result', 'created')
         const sectionId = getInput('move_to_section_id')
         if (sectionId) {
           await client.sections.addTask(sectionId, {task: task.gid})
@@ -127,8 +141,11 @@ async function run(): Promise<void> {
       } else {
         info(`Found task ${JSON.stringify(prTask.data[0])}`)
         const taskId = prTask.data[0].gid
+        setOutput('task_url', prTask.data[0].permalink_url)
+        setOutput('result', 'updated')
         await client.tasks.updateTask(taskId, {
           name: title,
+          notes,
           // eslint-disable-next-line camelcase
           custom_fields: {
             [customFields.status.gid]: statusGid

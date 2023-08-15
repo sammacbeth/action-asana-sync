@@ -103,12 +103,14 @@ function run() {
             if (['pull_request', 'pull_request_target'].includes(github_1.context.eventName)) {
                 const payload = github_1.context.payload;
                 const htmlUrl = payload.pull_request.html_url;
+                const requestor = getUserFromLogin(payload.sender.login);
                 (0, core_1.info)(`PR url: ${htmlUrl}`);
                 (0, core_1.info)(`Action: ${payload.action}`);
                 const customFields = yield findCustomFields(ASANA_WORKSPACE_ID);
                 // PR metadata
                 const statusGid = ((_b = (_a = customFields.status.enum_options) === null || _a === void 0 ? void 0 : _a.find(f => f.name === getPRState(payload.pull_request))) === null || _b === void 0 ? void 0 : _b.gid) || '';
                 const title = `${payload.repository.full_name}#${payload.pull_request.number} - ${payload.pull_request.title}`;
+                const body = payload.pull_request.body || 'Empty description';
                 if (title.startsWith('Release: ')) {
                     return;
                 }
@@ -116,20 +118,30 @@ function run() {
                 const prTask = yield client.tasks.searchInWorkspace(ASANA_WORKSPACE_ID, {
                     [`custom_fields.${customFields.url.gid}.value`]: htmlUrl
                 });
+                const notes = `
+Note: This description is automatically updated from Github. Changes will be LOST.
+
+${htmlUrl}
+
+PR content:
+${body.replace(/^---$[\s\S]*/gm, '')}`;
                 if (prTask.data.length === 0) {
                     // task doesn't exist, create a new one
                     (0, core_1.info)('Creating new PR task');
                     const task = yield client.tasks.create({
+                        assignee: requestor,
                         workspace: ASANA_WORKSPACE_ID,
                         // eslint-disable-next-line camelcase
                         custom_fields: {
                             [customFields.url.gid]: htmlUrl,
                             [customFields.status.gid]: statusGid
                         },
-                        notes: `${htmlUrl}`,
+                        notes,
                         name: title,
                         projects: [PROJECT_ID]
                     });
+                    (0, core_1.setOutput)('task_url', task.permalink_url);
+                    (0, core_1.setOutput)('result', 'created');
                     const sectionId = (0, core_1.getInput)('move_to_section_id');
                     if (sectionId) {
                         yield client.sections.addTask(sectionId, { task: task.gid });
@@ -140,8 +152,11 @@ function run() {
                 else {
                     (0, core_1.info)(`Found task ${JSON.stringify(prTask.data[0])}`);
                     const taskId = prTask.data[0].gid;
+                    (0, core_1.setOutput)('task_url', prTask.data[0].permalink_url);
+                    (0, core_1.setOutput)('result', 'updated');
                     yield client.tasks.updateTask(taskId, {
                         name: title,
+                        notes,
                         // eslint-disable-next-line camelcase
                         custom_fields: {
                             [customFields.status.gid]: statusGid
