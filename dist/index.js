@@ -34,6 +34,10 @@ const CUSTOM_FIELD_NAMES = {
     url: 'Github URL',
     status: 'Github Status'
 };
+const MAIL_MAP = {
+    mas: 'marc',
+    nil: 'caine'
+};
 const client = asana_1.Client.create({
     defaultHeaders: {
         'asana-enable': 'new_user_task_lists,new_project_templates,new_goal_memberships'
@@ -42,7 +46,12 @@ const client = asana_1.Client.create({
 const ASANA_WORKSPACE_ID = (0, core_1.getInput)('ASANA_WORKSPACE_ID', { required: true });
 const PROJECT_ID = (0, core_1.getInput)('ASANA_PROJECT_ID', { required: true });
 function getUserFromLogin(login) {
-    return `${login}@duckduckgo.com`;
+    let mail = MAIL_MAP[login];
+    if (mail === undefined) {
+        // Fall back to matching logins
+        mail = login;
+    }
+    return `${mail}@duckduckgo.com`;
 }
 function createReviewSubTasks(taskId) {
     return __awaiter(this, void 0, void 0, function* () {

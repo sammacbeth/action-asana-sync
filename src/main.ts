@@ -13,6 +13,11 @@ const CUSTOM_FIELD_NAMES = {
   status: 'Github Status'
 }
 
+const MAIL_MAP: {[key: string]: string} = {
+  mas: 'marc',
+  nil: 'caine'
+}
+
 type PRState = 'Open' | 'Closed' | 'Merged' | 'Approved' | 'Draft'
 const client = Client.create({
   defaultHeaders: {
@@ -24,7 +29,12 @@ const ASANA_WORKSPACE_ID = getInput('ASANA_WORKSPACE_ID', {required: true})
 const PROJECT_ID = getInput('ASANA_PROJECT_ID', {required: true})
 
 function getUserFromLogin(login: string): string {
-  return `${login}@duckduckgo.com`
+  let mail = MAIL_MAP[login]
+  if (mail === undefined) {
+    // Fall back to matching logins
+    mail = login
+  }
+  return `${mail}@duckduckgo.com`
 }
 
 async function createReviewSubTasks(taskId: string): Promise<void> {
