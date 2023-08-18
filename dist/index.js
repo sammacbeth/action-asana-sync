@@ -15,17 +15,6 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-var __rest = (this && this.__rest) || function (s, e) {
-    var t = {};
-    for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p) && e.indexOf(p) < 0)
-        t[p] = s[p];
-    if (s != null && typeof Object.getOwnPropertySymbols === "function")
-        for (var i = 0, p = Object.getOwnPropertySymbols(s); i < p.length; i++) {
-            if (e.indexOf(p[i]) < 0 && Object.prototype.propertyIsEnumerable.call(s, p[i]))
-                t[p[i]] = s[p[i]];
-        }
-    return t;
-};
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 const asana_1 = __nccwpck_require__(3565);
 const core_1 = __nccwpck_require__(2186);
@@ -53,53 +42,69 @@ function getUserFromLogin(login) {
     }
     return `${mail}@duckduckgo.com`;
 }
-function createReviewSubTasks(taskId) {
+function getOrCreateReviewSubtask(taskId, reviewer, subtasks) {
     return __awaiter(this, void 0, void 0, function* () {
-        (0, core_1.info)(`Creating review subtasks for task ${taskId}`);
         const payload = github_1.context.payload;
-        const requestor = getUserFromLogin(payload.sender.login);
-        const reviewers = payload.pull_request.requested_reviewers;
         const title = payload.pull_request.title;
-        const subtasks = yield client.tasks.subtasks(taskId);
-        for (let reviewer of reviewers) {
-            // TODO do we need to fix for teams?
-            reviewer = reviewer;
-            // TODO reviewer.email exists but is not always "filled in"?
-            const reviewerEmail = getUserFromLogin(reviewer.login);
-            let reviewSubtask;
-            for (let subtask of subtasks.data) {
-                (0, core_1.info)(`Checking subtask ${subtask.gid} assignee`);
-                subtask = yield client.tasks.findById(subtask.gid);
-                if (!subtask.assignee) {
-                    (0, core_1.info)(`Task ${subtask.gid} has no assignee`);
-                    continue;
-                }
-                const asanaUser = yield client.users.findById(subtask.assignee.gid);
-                if (asanaUser.email === reviewerEmail) {
-                    (0, core_1.info)(`Found existing review task for ${subtask.gid} and ${asanaUser.email}`);
-                    reviewSubtask = subtask;
-                    break;
-                }
+        //  const subtasks = await client.tasks.subtasks(taskId)
+        const author = getUserFromLogin(payload.pull_request.user.login);
+        const reviewerEmail = getUserFromLogin(reviewer);
+        let reviewSubtask;
+        for (let subtask of subtasks.data) {
+            (0, core_1.info)(`Checking subtask ${subtask.gid} assignee`);
+            subtask = yield client.tasks.findById(subtask.gid);
+            if (!subtask.assignee) {
+                (0, core_1.info)(`Task ${subtask.gid} has no assignee`);
+                continue;
             }
-            (0, core_1.info)(`Subtask for ${reviewerEmail}: ${JSON.stringify(reviewSubtask)}`);
+            const asanaUser = yield client.users.findById(subtask.assignee.gid);
+            if (asanaUser.email === reviewerEmail) {
+                (0, core_1.info)(`Found existing review task for ${subtask.gid} and ${asanaUser.email}`);
+                reviewSubtask = subtask;
+                break;
+            }
+        }
+        (0, core_1.info)(`Subtask for ${reviewerEmail}: ${JSON.stringify(reviewSubtask)}`);
+        if (!reviewSubtask) {
+            (0, core_1.info)(`Creating review subtask for ${reviewerEmail}`);
+            (0, core_1.info)(`Author: ${author}`);
             const subtaskObj = {
                 name: `Review Request: ${title}`,
-                notes: `${requestor} requested your code review of ${payload.pull_request.html_url}.
+                notes: `${author} requested your code review of ${payload.pull_request.html_url}.
 
 Please review changes and close this subtask once done.`,
                 assignee: reviewerEmail,
-                followers: [requestor, reviewerEmail],
-                completed: false
+                followers: [author, reviewerEmail]
             };
-            if (!reviewSubtask) {
-                (0, core_1.info)(`Creating review subtask for ${reviewerEmail}`);
-                (0, core_1.info)(`Requestor: ${requestor}`);
-                yield client.tasks.addSubtask(taskId, subtaskObj);
+            reviewSubtask = yield client.tasks.addSubtask(taskId, subtaskObj);
+        }
+        return reviewSubtask;
+    });
+}
+function createReviewSubTasks(taskId) {
+    return __awaiter(this, void 0, void 0, function* () {
+        (0, core_1.info)(`Creating/updating review subtasks for task ${taskId}`);
+        const payload = github_1.context.payload;
+        const requestor = getUserFromLogin(payload.sender.login);
+        const reviewers = payload.pull_request.requested_reviewers;
+        const subtasks = yield client.tasks.subtasks(taskId);
+        if (github_1.context.eventName === 'pull_request') {
+            // Make sure we have created all subtasks for each reviewer
+            for (let reviewer of reviewers) {
+                // TODO do we need to fix for teams?
+                reviewer = reviewer;
+                getOrCreateReviewSubtask(taskId, reviewer.login, subtasks);
             }
-            else {
-                // This reopens existing task
-                const { followers } = subtaskObj, otherProps = __rest(subtaskObj, ["followers"]);
-                yield client.tasks.updateTask(reviewSubtask.gid, otherProps);
+        }
+        else if (github_1.context.eventName === 'pull_request_review') {
+            const reviewPayload = github_1.context.payload;
+            const reviewer = reviewPayload.review.user;
+            const subtask = yield getOrCreateReviewSubtask(taskId, reviewer.login, subtasks);
+            (0, core_1.info)(`Processing PR review from ${reviewer.login}`);
+            if (reviewPayload.action === 'submitted' &&
+                reviewPayload.review.state === 'approved') {
+                (0, core_1.info)(`Completing review subtask for ${reviewer.login}: ${subtask.gid}`);
+                yield client.tasks.updateTask(subtask.gid, { completed: true });
             }
         }
     });
@@ -109,7 +114,7 @@ function run() {
     return __awaiter(this, void 0, void 0, function* () {
         try {
             (0, core_1.info)(`Event: ${github_1.context.eventName}.`);
-            if (['pull_request', 'pull_request_target'].includes(github_1.context.eventName)) {
+            if (['pull_request', 'pull_request_target', 'pull_request_review'].includes(github_1.context.eventName)) {
                 const payload = github_1.context.payload;
                 const htmlUrl = payload.pull_request.html_url;
                 const requestor = getUserFromLogin(payload.sender.login);

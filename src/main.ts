@@ -4,6 +4,7 @@ import {context} from '@actions/github'
 import {
   PullRequest,
   PullRequestEvent,
+  PullRequestReviewEvent,
   User,
   Team
 } from '@octokit/webhooks-types'
@@ -37,54 +38,79 @@ function getUserFromLogin(login: string): string {
   return `${mail}@duckduckgo.com`
 }
 
-async function createReviewSubTasks(taskId: string): Promise<void> {
-  info(`Creating review subtasks for task ${taskId}`)
+async function getOrCreateReviewSubtask(
+  taskId: string,
+  reviewer: string,
+  subtasks: asana.resources.ResourceList<asana.resources.Tasks.Type>
+): Promise<asana.resources.Tasks.Type> {
   const payload = context.payload as PullRequestEvent
-  const requestor = getUserFromLogin(payload.sender.login)
-  const reviewers = payload.pull_request.requested_reviewers
   const title = payload.pull_request.title
-  const subtasks = await client.tasks.subtasks(taskId)
-  for (let reviewer of reviewers) {
-    // TODO do we need to fix for teams?
-    reviewer = reviewer as User
+  //  const subtasks = await client.tasks.subtasks(taskId)
+  const author = getUserFromLogin(payload.pull_request.user.login)
+  const reviewerEmail = getUserFromLogin(reviewer)
 
-    // TODO reviewer.email exists but is not always "filled in"?
-    const reviewerEmail = getUserFromLogin(reviewer.login)
-    let reviewSubtask
-    for (let subtask of subtasks.data) {
-      info(`Checking subtask ${subtask.gid} assignee`)
-      subtask = await client.tasks.findById(subtask.gid)
-      if (!subtask.assignee) {
-        info(`Task ${subtask.gid} has no assignee`)
-        continue
-      }
-      const asanaUser = await client.users.findById(subtask.assignee.gid)
-      if (asanaUser.email === reviewerEmail) {
-        info(
-          `Found existing review task for ${subtask.gid} and ${asanaUser.email}`
-        )
-        reviewSubtask = subtask
-        break
-      }
+  let reviewSubtask
+  for (let subtask of subtasks.data) {
+    info(`Checking subtask ${subtask.gid} assignee`)
+    subtask = await client.tasks.findById(subtask.gid)
+    if (!subtask.assignee) {
+      info(`Task ${subtask.gid} has no assignee`)
+      continue
     }
-    info(`Subtask for ${reviewerEmail}: ${JSON.stringify(reviewSubtask)}`)
+    const asanaUser = await client.users.findById(subtask.assignee.gid)
+    if (asanaUser.email === reviewerEmail) {
+      info(
+        `Found existing review task for ${subtask.gid} and ${asanaUser.email}`
+      )
+      reviewSubtask = subtask
+      break
+    }
+  }
+  info(`Subtask for ${reviewerEmail}: ${JSON.stringify(reviewSubtask)}`)
+  if (!reviewSubtask) {
+    info(`Creating review subtask for ${reviewerEmail}`)
+    info(`Author: ${author}`)
     const subtaskObj = {
       name: `Review Request: ${title}`,
-      notes: `${requestor} requested your code review of ${payload.pull_request.html_url}.
+      notes: `${author} requested your code review of ${payload.pull_request.html_url}.
 
 Please review changes and close this subtask once done.`,
       assignee: reviewerEmail,
-      followers: [requestor, reviewerEmail],
-      completed: false
+      followers: [author, reviewerEmail]
     }
-    if (!reviewSubtask) {
-      info(`Creating review subtask for ${reviewerEmail}`)
-      info(`Requestor: ${requestor}`)
-      await client.tasks.addSubtask(taskId, subtaskObj)
-    } else {
-      // This reopens existing task
-      const {followers, ...otherProps} = subtaskObj
-      await client.tasks.updateTask(reviewSubtask.gid, otherProps)
+    reviewSubtask = await client.tasks.addSubtask(taskId, subtaskObj)
+  }
+  return reviewSubtask
+}
+
+async function createReviewSubTasks(taskId: string): Promise<void> {
+  info(`Creating/updating review subtasks for task ${taskId}`)
+  const payload = context.payload as PullRequestEvent
+  const requestor = getUserFromLogin(payload.sender.login)
+  const reviewers = payload.pull_request.requested_reviewers
+  const subtasks = await client.tasks.subtasks(taskId)
+  if (context.eventName === 'pull_request') {
+    // Make sure we have created all subtasks for each reviewer
+    for (let reviewer of reviewers) {
+      // TODO do we need to fix for teams?
+      reviewer = reviewer as User
+      getOrCreateReviewSubtask(taskId, reviewer.login, subtasks)
+    }
+  } else if (context.eventName === 'pull_request_review') {
+    const reviewPayload = context.payload as PullRequestReviewEvent
+    const reviewer = reviewPayload.review.user
+    const subtask = await getOrCreateReviewSubtask(
+      taskId,
+      reviewer.login,
+      subtasks
+    )
+    info(`Processing PR review from ${reviewer.login}`)
+    if (
+      reviewPayload.action === 'submitted' &&
+      reviewPayload.review.state === 'approved'
+    ) {
+      info(`Completing review subtask for ${reviewer.login}: ${subtask.gid}`)
+      await client.tasks.updateTask(subtask.gid, {completed: true})
     }
   }
 }
@@ -92,7 +118,11 @@ Please review changes and close this subtask once done.`,
 async function run(): Promise<void> {
   try {
     info(`Event: ${context.eventName}.`)
-    if (['pull_request', 'pull_request_target'].includes(context.eventName)) {
+    if (
+      ['pull_request', 'pull_request_target', 'pull_request_review'].includes(
+        context.eventName
+      )
+    ) {
       const payload = context.payload as PullRequestEvent
       const htmlUrl = payload.pull_request.html_url
       const requestor = getUserFromLogin(payload.sender.login)
