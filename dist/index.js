@@ -15,17 +15,6 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-var __rest = (this && this.__rest) || function (s, e) {
-    var t = {};
-    for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p) && e.indexOf(p) < 0)
-        t[p] = s[p];
-    if (s != null && typeof Object.getOwnPropertySymbols === "function")
-        for (var i = 0, p = Object.getOwnPropertySymbols(s); i < p.length; i++) {
-            if (e.indexOf(p[i]) < 0 && Object.prototype.propertyIsEnumerable.call(s, p[i]))
-                t[p[i]] = s[p[i]];
-        }
-    return t;
-};
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 const asana_1 = __nccwpck_require__(3565);
 const core_1 = __nccwpck_require__(2186);
@@ -53,53 +42,73 @@ function getUserFromLogin(login) {
     }
     return `${mail}@duckduckgo.com`;
 }
-function createReviewSubTasks(taskId) {
+function createOrReopenReviewSubtask(taskId, reviewer, subtasks) {
     return __awaiter(this, void 0, void 0, function* () {
-        (0, core_1.info)(`Creating review subtasks for task ${taskId}`);
         const payload = github_1.context.payload;
-        const requestor = getUserFromLogin(payload.sender.login);
-        const reviewers = payload.pull_request.requested_reviewers;
         const title = payload.pull_request.title;
-        const subtasks = yield client.tasks.subtasks(taskId);
-        for (let reviewer of reviewers) {
-            // TODO do we need to fix for teams?
-            reviewer = reviewer;
-            // TODO reviewer.email exists but is not always "filled in"?
-            const reviewerEmail = getUserFromLogin(reviewer.login);
-            let reviewSubtask;
-            for (let subtask of subtasks.data) {
-                (0, core_1.info)(`Checking subtask ${subtask.gid} assignee`);
-                subtask = yield client.tasks.findById(subtask.gid);
-                if (!subtask.assignee) {
-                    (0, core_1.info)(`Task ${subtask.gid} has no assignee`);
-                    continue;
-                }
-                const asanaUser = yield client.users.findById(subtask.assignee.gid);
-                if (asanaUser.email === reviewerEmail) {
-                    (0, core_1.info)(`Found existing review task for ${subtask.gid} and ${asanaUser.email}`);
-                    reviewSubtask = subtask;
-                    break;
-                }
+        //  const subtasks = await client.tasks.subtasks(taskId)
+        const author = getUserFromLogin(payload.pull_request.user.login);
+        const reviewerEmail = getUserFromLogin(reviewer);
+        let reviewSubtask;
+        for (let subtask of subtasks.data) {
+            (0, core_1.info)(`Checking subtask ${subtask.gid} assignee`);
+            subtask = yield client.tasks.findById(subtask.gid);
+            if (!subtask.assignee) {
+                (0, core_1.info)(`Task ${subtask.gid} has no assignee`);
+                continue;
             }
-            (0, core_1.info)(`Subtask for ${reviewerEmail}: ${JSON.stringify(reviewSubtask)}`);
-            const subtaskObj = {
-                name: `Review Request: ${title}`,
-                notes: `${requestor} requested your code review of ${payload.pull_request.html_url}.
+            const asanaUser = yield client.users.findById(subtask.assignee.gid);
+            if (asanaUser.email === reviewerEmail) {
+                (0, core_1.info)(`Found existing review task for ${subtask.gid} and ${asanaUser.email}`);
+                reviewSubtask = subtask;
+                break;
+            }
+        }
+        (0, core_1.info)(`Subtask for ${reviewerEmail}: ${JSON.stringify(reviewSubtask)}`);
+        const subtaskObj = {
+            name: `Review Request: ${title}`,
+            notes: `${author} requested your code review of ${payload.pull_request.html_url}.
 
-Please review changes and close this subtask once done.`,
-                assignee: reviewerEmail,
-                followers: [requestor, reviewerEmail],
-                completed: false
-            };
-            if (!reviewSubtask) {
-                (0, core_1.info)(`Creating review subtask for ${reviewerEmail}`);
-                (0, core_1.info)(`Requestor: ${requestor}`);
-                yield client.tasks.addSubtask(taskId, subtaskObj);
+Please review the changes. This task will be automatically closed when the review is completed in Github.`,
+            assignee: reviewerEmail,
+            followers: [author, reviewerEmail]
+        };
+        if (!reviewSubtask) {
+            (0, core_1.info)(`Creating review subtask for ${reviewerEmail}`);
+            (0, core_1.info)(`Author: ${author}`);
+            reviewSubtask = yield client.tasks.addSubtask(taskId, subtaskObj);
+        }
+        else {
+            (0, core_1.info)(`Reopening a review subtask for ${reviewerEmail}`);
+            // TODO add a comment?
+            yield client.tasks.updateTask(reviewSubtask.gid, { completed: false });
+        }
+        return reviewSubtask;
+    });
+}
+function updateReviewSubTasks(taskId) {
+    return __awaiter(this, void 0, void 0, function* () {
+        (0, core_1.info)(`Creating/updating review subtasks for task ${taskId}`);
+        const payload = github_1.context.payload;
+        const subtasks = yield client.tasks.subtasks(taskId);
+        if (github_1.context.eventName === 'pull_request') {
+            if (payload.action === 'review_requested') {
+                const requestPayload = payload;
+                // TODO handle teams?
+                if ('requested_reviewer' in requestPayload) {
+                    createOrReopenReviewSubtask(taskId, requestPayload.requested_reviewer.login, subtasks);
+                }
             }
-            else {
-                // This reopens existing task
-                const { followers } = subtaskObj, otherProps = __rest(subtaskObj, ["followers"]);
-                yield client.tasks.updateTask(reviewSubtask.gid, otherProps);
+        }
+        else if (github_1.context.eventName === 'pull_request_review') {
+            const reviewPayload = github_1.context.payload;
+            const reviewer = reviewPayload.review.user;
+            const subtask = yield createOrReopenReviewSubtask(taskId, reviewer.login, subtasks);
+            (0, core_1.info)(`Processing PR review from ${reviewer.login}`);
+            if (reviewPayload.action === 'submitted' &&
+                reviewPayload.review.state === 'approved') {
+                (0, core_1.info)(`Completing review subtask for ${reviewer.login}: ${subtask.gid}`);
+                yield client.tasks.updateTask(subtask.gid, { completed: true });
             }
         }
     });
@@ -109,10 +118,10 @@ function run() {
     return __awaiter(this, void 0, void 0, function* () {
         try {
             (0, core_1.info)(`Event: ${github_1.context.eventName}.`);
-            if (['pull_request', 'pull_request_target'].includes(github_1.context.eventName)) {
+            if (['pull_request', 'pull_request_target', 'pull_request_review'].includes(github_1.context.eventName)) {
                 const payload = github_1.context.payload;
                 const htmlUrl = payload.pull_request.html_url;
-                const requestor = getUserFromLogin(payload.sender.login);
+                const requestor = getUserFromLogin(payload.pull_request.user.login);
                 (0, core_1.info)(`PR url: ${htmlUrl}`);
                 (0, core_1.info)(`Action: ${payload.action}`);
                 const customFields = yield findCustomFields(ASANA_WORKSPACE_ID);
@@ -132,7 +141,6 @@ Note: This description is automatically updated from Github. Changes will be LOS
 
 ${htmlUrl}
 
-PR content:
 ${body.replace(/^---$[\s\S]*/gm, '')}`;
                 if (prTask.data.length === 0) {
                     // task doesn't exist, create a new one
@@ -155,7 +163,7 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`;
                     if (sectionId) {
                         yield client.sections.addTask(sectionId, { task: task.gid });
                     }
-                    yield createReviewSubTasks(task.gid);
+                    yield updateReviewSubTasks(task.gid);
                     // TODO: attachments
                 }
                 else {
@@ -171,7 +179,7 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`;
                             [customFields.status.gid]: statusGid
                         }
                     });
-                    yield createReviewSubTasks(taskId);
+                    yield updateReviewSubTasks(taskId);
                 }
                 return;
             }

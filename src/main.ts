@@ -4,8 +4,8 @@ import {context} from '@actions/github'
 import {
   PullRequest,
   PullRequestEvent,
-  User,
-  Team
+  PullRequestReviewEvent,
+  PullRequestReviewRequestedEvent
 } from '@octokit/webhooks-types'
 
 const CUSTOM_FIELD_NAMES = {
@@ -37,54 +37,86 @@ function getUserFromLogin(login: string): string {
   return `${mail}@duckduckgo.com`
 }
 
-async function createReviewSubTasks(taskId: string): Promise<void> {
-  info(`Creating review subtasks for task ${taskId}`)
+async function createOrReopenReviewSubtask(
+  taskId: string,
+  reviewer: string,
+  subtasks: asana.resources.ResourceList<asana.resources.Tasks.Type>
+): Promise<asana.resources.Tasks.Type> {
   const payload = context.payload as PullRequestEvent
-  const requestor = getUserFromLogin(payload.sender.login)
-  const reviewers = payload.pull_request.requested_reviewers
   const title = payload.pull_request.title
+  //  const subtasks = await client.tasks.subtasks(taskId)
+  const author = getUserFromLogin(payload.pull_request.user.login)
+  const reviewerEmail = getUserFromLogin(reviewer)
+
+  let reviewSubtask
+  for (let subtask of subtasks.data) {
+    info(`Checking subtask ${subtask.gid} assignee`)
+    subtask = await client.tasks.findById(subtask.gid)
+    if (!subtask.assignee) {
+      info(`Task ${subtask.gid} has no assignee`)
+      continue
+    }
+    const asanaUser = await client.users.findById(subtask.assignee.gid)
+    if (asanaUser.email === reviewerEmail) {
+      info(
+        `Found existing review task for ${subtask.gid} and ${asanaUser.email}`
+      )
+      reviewSubtask = subtask
+      break
+    }
+  }
+  info(`Subtask for ${reviewerEmail}: ${JSON.stringify(reviewSubtask)}`)
+  const subtaskObj = {
+    name: `Review Request: ${title}`,
+    notes: `${author} requested your code review of ${payload.pull_request.html_url}.
+
+Please review the changes. This task will be automatically closed when the review is completed in Github.`,
+    assignee: reviewerEmail,
+    followers: [author, reviewerEmail]
+  }
+  if (!reviewSubtask) {
+    info(`Creating review subtask for ${reviewerEmail}`)
+    info(`Author: ${author}`)
+    reviewSubtask = await client.tasks.addSubtask(taskId, subtaskObj)
+  } else {
+    info(`Reopening a review subtask for ${reviewerEmail}`)
+    // TODO add a comment?
+    await client.tasks.updateTask(reviewSubtask.gid, {completed: false})
+  }
+  return reviewSubtask
+}
+
+async function updateReviewSubTasks(taskId: string): Promise<void> {
+  info(`Creating/updating review subtasks for task ${taskId}`)
+  const payload = context.payload as PullRequestEvent
   const subtasks = await client.tasks.subtasks(taskId)
-  for (let reviewer of reviewers) {
-    // TODO do we need to fix for teams?
-    reviewer = reviewer as User
-
-    // TODO reviewer.email exists but is not always "filled in"?
-    const reviewerEmail = getUserFromLogin(reviewer.login)
-    let reviewSubtask
-    for (let subtask of subtasks.data) {
-      info(`Checking subtask ${subtask.gid} assignee`)
-      subtask = await client.tasks.findById(subtask.gid)
-      if (!subtask.assignee) {
-        info(`Task ${subtask.gid} has no assignee`)
-        continue
-      }
-      const asanaUser = await client.users.findById(subtask.assignee.gid)
-      if (asanaUser.email === reviewerEmail) {
-        info(
-          `Found existing review task for ${subtask.gid} and ${asanaUser.email}`
+  if (context.eventName === 'pull_request') {
+    if (payload.action === 'review_requested') {
+      const requestPayload = payload as PullRequestReviewRequestedEvent
+      // TODO handle teams?
+      if ('requested_reviewer' in requestPayload) {
+        createOrReopenReviewSubtask(
+          taskId,
+          requestPayload.requested_reviewer.login,
+          subtasks
         )
-        reviewSubtask = subtask
-        break
       }
     }
-    info(`Subtask for ${reviewerEmail}: ${JSON.stringify(reviewSubtask)}`)
-    const subtaskObj = {
-      name: `Review Request: ${title}`,
-      notes: `${requestor} requested your code review of ${payload.pull_request.html_url}.
-
-Please review changes and close this subtask once done.`,
-      assignee: reviewerEmail,
-      followers: [requestor, reviewerEmail],
-      completed: false
-    }
-    if (!reviewSubtask) {
-      info(`Creating review subtask for ${reviewerEmail}`)
-      info(`Requestor: ${requestor}`)
-      await client.tasks.addSubtask(taskId, subtaskObj)
-    } else {
-      // This reopens existing task
-      const {followers, ...otherProps} = subtaskObj
-      await client.tasks.updateTask(reviewSubtask.gid, otherProps)
+  } else if (context.eventName === 'pull_request_review') {
+    const reviewPayload = context.payload as PullRequestReviewEvent
+    const reviewer = reviewPayload.review.user
+    const subtask = await createOrReopenReviewSubtask(
+      taskId,
+      reviewer.login,
+      subtasks
+    )
+    info(`Processing PR review from ${reviewer.login}`)
+    if (
+      reviewPayload.action === 'submitted' &&
+      reviewPayload.review.state === 'approved'
+    ) {
+      info(`Completing review subtask for ${reviewer.login}: ${subtask.gid}`)
+      await client.tasks.updateTask(subtask.gid, {completed: true})
     }
   }
 }
@@ -92,10 +124,14 @@ Please review changes and close this subtask once done.`,
 async function run(): Promise<void> {
   try {
     info(`Event: ${context.eventName}.`)
-    if (['pull_request', 'pull_request_target'].includes(context.eventName)) {
+    if (
+      ['pull_request', 'pull_request_target', 'pull_request_review'].includes(
+        context.eventName
+      )
+    ) {
       const payload = context.payload as PullRequestEvent
       const htmlUrl = payload.pull_request.html_url
-      const requestor = getUserFromLogin(payload.sender.login)
+      const requestor = getUserFromLogin(payload.pull_request.user.login)
       info(`PR url: ${htmlUrl}`)
       info(`Action: ${payload.action}`)
       const customFields = await findCustomFields(ASANA_WORKSPACE_ID)
@@ -122,7 +158,6 @@ Note: This description is automatically updated from Github. Changes will be LOS
 
 ${htmlUrl}
 
-PR content:
 ${body.replace(/^---$[\s\S]*/gm, '')}`
       if (prTask.data.length === 0) {
         // task doesn't exist, create a new one
@@ -146,7 +181,7 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`
         if (sectionId) {
           await client.sections.addTask(sectionId, {task: task.gid})
         }
-        await createReviewSubTasks(task.gid)
+        await updateReviewSubTasks(task.gid)
         // TODO: attachments
       } else {
         info(`Found task ${JSON.stringify(prTask.data[0])}`)
@@ -161,7 +196,7 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`
             [customFields.status.gid]: statusGid
           }
         })
-        await createReviewSubTasks(taskId)
+        await updateReviewSubTasks(taskId)
       }
       return
     }
