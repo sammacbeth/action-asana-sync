@@ -168,9 +168,14 @@ Note: This description is automatically updated from Github. Changes will be LOS
 ${htmlUrl}
 
 ${body.replace(/^---$[\s\S]*/gm, '')}`;
+                const asanaTaskMatch = notes.match(/Asana:.*https:\/\/app.asana.*\/([0-9]+).*/);
                 if (prTask.data.length === 0) {
                     // task doesn't exist, create a new one
                     (0, core_1.info)('Creating new PR task');
+                    let parentID;
+                    if (asanaTaskMatch) {
+                        parentID = asanaTaskMatch[1];
+                    }
                     const task = yield client.tasks.create({
                         assignee: requestor,
                         workspace: ASANA_WORKSPACE_ID,
@@ -179,6 +184,7 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`;
                             [customFields.url.gid]: htmlUrl,
                             [customFields.status.gid]: statusGid
                         },
+                        parent: parentID,
                         notes,
                         name: title,
                         projects: [PROJECT_ID]
