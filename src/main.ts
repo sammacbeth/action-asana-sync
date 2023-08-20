@@ -137,6 +137,14 @@ async function updateReviewSubTasks(taskId: string): Promise<void> {
   }
 }
 
+async function closeSubtasks(taskId: string) {
+  const subtasks = await client.tasks.subtasks(taskId)
+
+  for (const subtask of subtasks.data) {
+    await client.tasks.updateTask(subtask.gid, {completed: true})
+  }
+}
+
 async function run(): Promise<void> {
   try {
     info(`Event: ${context.eventName}.`)
@@ -167,6 +175,7 @@ async function run(): Promise<void> {
       const title = `${payload.repository.full_name}#${payload.pull_request.number} - ${payload.pull_request.title}`
       const body = payload.pull_request.body || 'Empty description'
 
+      // Skip any action on PRs with this title
       if (title.startsWith('Release: ')) {
         return
       }
@@ -211,6 +220,10 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`
         const taskId = prTask.data[0].gid
         setOutput('task_url', prTask.data[0].permalink_url)
         setOutput('result', 'updated')
+        if (payload.pull_request.state === 'closed') {
+          // Close any remaining review tasks when PR is merged
+          closeSubtasks(taskId)
+        }
         await client.tasks.updateTask(taskId, {
           name: title,
           notes,

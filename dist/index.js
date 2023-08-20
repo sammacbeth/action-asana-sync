@@ -125,6 +125,14 @@ function updateReviewSubTasks(taskId) {
         }
     });
 }
+function closeSubtasks(taskId) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const subtasks = yield client.tasks.subtasks(taskId);
+        for (const subtask of subtasks.data) {
+            yield client.tasks.updateTask(subtask.gid, { completed: true });
+        }
+    });
+}
 function run() {
     var _a, _b;
     return __awaiter(this, void 0, void 0, function* () {
@@ -146,6 +154,7 @@ function run() {
                 const statusGid = ((_b = (_a = customFields.status.enum_options) === null || _a === void 0 ? void 0 : _a.find(f => f.name === getPRState(payload.pull_request))) === null || _b === void 0 ? void 0 : _b.gid) || '';
                 const title = `${payload.repository.full_name}#${payload.pull_request.number} - ${payload.pull_request.title}`;
                 const body = payload.pull_request.body || 'Empty description';
+                // Skip any action on PRs with this title
                 if (title.startsWith('Release: ')) {
                     return;
                 }
@@ -188,6 +197,10 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`;
                     const taskId = prTask.data[0].gid;
                     (0, core_1.setOutput)('task_url', prTask.data[0].permalink_url);
                     (0, core_1.setOutput)('result', 'updated');
+                    if (payload.pull_request.state === 'closed') {
+                        // Close any remaining review tasks when PR is merged
+                        closeSubtasks(taskId);
+                    }
                     yield client.tasks.updateTask(taskId, {
                         name: title,
                         notes,
