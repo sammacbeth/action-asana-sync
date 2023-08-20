@@ -34,6 +34,13 @@ const client = asana_1.Client.create({
 }).useAccessToken((0, core_1.getInput)('ASANA_ACCESS_TOKEN', { required: true }));
 const ASANA_WORKSPACE_ID = (0, core_1.getInput)('ASANA_WORKSPACE_ID', { required: true });
 const PROJECT_ID = (0, core_1.getInput)('ASANA_PROJECT_ID', { required: true });
+// Users which will not receive PRs/reviews tasks (will be remapped to dax)
+let SKIPPED_USERS = (0, core_1.getInput)('SKIPPED_USERS');
+if (SKIPPED_USERS === '') {
+    // default set of users to skip
+    SKIPPED_USERS = 'bhall,tommy,aaron,viktor';
+}
+const SKIPPED_USERS_LIST = SKIPPED_USERS.split(',');
 function getUserFromLogin(login) {
     let mail = MAIL_MAP[login];
     if (mail === undefined) {
@@ -49,6 +56,10 @@ function createOrReopenReviewSubtask(taskId, reviewer, subtasks) {
         //  const subtasks = await client.tasks.subtasks(taskId)
         const author = getUserFromLogin(payload.pull_request.user.login);
         const reviewerEmail = getUserFromLogin(reviewer);
+        if (SKIPPED_USERS_LIST.includes(reviewer)) {
+            (0, core_1.info)(`Skipping review subtask creation for ${reviewer} - member of SKIPPED_USERS`);
+            return null;
+        }
         let reviewSubtask;
         for (let subtask of subtasks.data) {
             (0, core_1.info)(`Checking subtask ${subtask.gid} assignee`);
@@ -105,7 +116,8 @@ function updateReviewSubTasks(taskId) {
             const reviewer = reviewPayload.review.user;
             const subtask = yield createOrReopenReviewSubtask(taskId, reviewer.login, subtasks);
             (0, core_1.info)(`Processing PR review from ${reviewer.login}`);
-            if (reviewPayload.action === 'submitted' &&
+            if (subtask !== null &&
+                reviewPayload.action === 'submitted' &&
                 reviewPayload.review.state === 'approved') {
                 (0, core_1.info)(`Completing review subtask for ${reviewer.login}: ${subtask.gid}`);
                 yield client.tasks.updateTask(subtask.gid, { completed: true });
@@ -121,7 +133,12 @@ function run() {
             if (['pull_request', 'pull_request_target', 'pull_request_review'].includes(github_1.context.eventName)) {
                 const payload = github_1.context.payload;
                 const htmlUrl = payload.pull_request.html_url;
-                const requestor = getUserFromLogin(payload.pull_request.user.login);
+                const prAuthor = payload.pull_request.user.login;
+                let requestor = getUserFromLogin(prAuthor);
+                if (SKIPPED_USERS_LIST.includes(prAuthor)) {
+                    (0, core_1.info)(`Changing assignee of PR review to dax - ${prAuthor} is member of SKIPPED_USERS`);
+                    requestor = 'dax@duckduckgo.com';
+                }
                 (0, core_1.info)(`PR url: ${htmlUrl}`);
                 (0, core_1.info)(`Action: ${payload.action}`);
                 const customFields = yield findCustomFields(ASANA_WORKSPACE_ID);

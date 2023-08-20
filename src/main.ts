@@ -28,6 +28,15 @@ const client = Client.create({
 const ASANA_WORKSPACE_ID = getInput('ASANA_WORKSPACE_ID', {required: true})
 const PROJECT_ID = getInput('ASANA_PROJECT_ID', {required: true})
 
+// Users which will not receive PRs/reviews tasks (will be remapped to dax)
+let SKIPPED_USERS = getInput('SKIPPED_USERS')
+
+if (SKIPPED_USERS === '') {
+  // default set of users to skip
+  SKIPPED_USERS = 'bhall,tommy,aaron,viktor'
+}
+const SKIPPED_USERS_LIST = SKIPPED_USERS.split(',')
+
 function getUserFromLogin(login: string): string {
   let mail = MAIL_MAP[login]
   if (mail === undefined) {
@@ -41,12 +50,18 @@ async function createOrReopenReviewSubtask(
   taskId: string,
   reviewer: string,
   subtasks: asana.resources.ResourceList<asana.resources.Tasks.Type>
-): Promise<asana.resources.Tasks.Type> {
+): Promise<asana.resources.Tasks.Type | null> {
   const payload = context.payload as PullRequestEvent
   const title = payload.pull_request.title
   //  const subtasks = await client.tasks.subtasks(taskId)
   const author = getUserFromLogin(payload.pull_request.user.login)
   const reviewerEmail = getUserFromLogin(reviewer)
+  if (SKIPPED_USERS_LIST.includes(reviewer)) {
+    info(
+      `Skipping review subtask creation for ${reviewer} - member of SKIPPED_USERS`
+    )
+    return null
+  }
 
   let reviewSubtask
   for (let subtask of subtasks.data) {
@@ -112,6 +127,7 @@ async function updateReviewSubTasks(taskId: string): Promise<void> {
     )
     info(`Processing PR review from ${reviewer.login}`)
     if (
+      subtask !== null &&
       reviewPayload.action === 'submitted' &&
       reviewPayload.review.state === 'approved'
     ) {
@@ -131,7 +147,14 @@ async function run(): Promise<void> {
     ) {
       const payload = context.payload as PullRequestEvent
       const htmlUrl = payload.pull_request.html_url
-      const requestor = getUserFromLogin(payload.pull_request.user.login)
+      const prAuthor = payload.pull_request.user.login
+      let requestor = getUserFromLogin(prAuthor)
+      if (SKIPPED_USERS_LIST.includes(prAuthor)) {
+        info(
+          `Changing assignee of PR review to dax - ${prAuthor} is member of SKIPPED_USERS`
+        )
+        requestor = 'dax@duckduckgo.com'
+      }
       info(`PR url: ${htmlUrl}`)
       info(`Action: ${payload.action}`)
       const customFields = await findCustomFields(ASANA_WORKSPACE_ID)
