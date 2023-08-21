@@ -25,6 +25,7 @@ on:
       - closed
       - reopened
       - synchronize
+      - review_requested
 
 jobs:
   sync:
