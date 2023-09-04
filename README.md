@@ -16,6 +16,7 @@ Create a [workflow file](./.github/workflows/asana.yml) that runs on
 
 ```yml
 name: 'asana sync'
+concurrency: ci-${{ github.ref }} # Make sure we don't run more than one at a time
 on:
   pull_request_review:
   pull_request:
@@ -32,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: sammacbeth/action-asana-sync@v1
+      - uses: duckduckgo/action-asana-sync@v1
         with:
           ASANA_ACCESS_TOKEN: ${{ secrets.ASANA_ACCESS_TOKEN }}
           ASANA_WORKSPACE_ID: ${{ secrets.ASANA_WORKSPACE_ID }}
