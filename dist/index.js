@@ -179,12 +179,7 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`;
                 if (prTask.data.length === 0) {
                     // task doesn't exist, create a new one
                     (0, core_1.info)('Creating new PR task');
-                    let parentID;
-                    if (asanaTaskMatch) {
-                        (0, core_1.info)(`Found Asana task mention with parent ID: ${asanaTaskMatch[1]}`);
-                        parentID = asanaTaskMatch[1];
-                    }
-                    const task = yield client.tasks.create({
+                    const taskObjBase = {
                         assignee: requestor,
                         workspace: ASANA_WORKSPACE_ID,
                         // eslint-disable-next-line camelcase
@@ -192,11 +187,23 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`;
                             [customFields.url.gid]: htmlUrl,
                             [customFields.status.gid]: statusGid
                         },
-                        parent: parentID,
                         notes,
                         name: title,
                         projects: [PROJECT_ID]
-                    });
+                    };
+                    let parentObj = {};
+                    if (asanaTaskMatch) {
+                        (0, core_1.info)(`Found Asana task mention with parent ID: ${asanaTaskMatch[1]}`);
+                        const parentID = asanaTaskMatch[1];
+                        parentObj = { parent: parentID };
+                        // Verify we can access parent or we can't add it
+                        const parent = yield client.tasks.findById(parentID).catch(e => {
+                            (0, core_1.info)(`Can't access parent task: ${parentID}: ${e}`);
+                            (0, core_1.info)(`Add 'dax' user to respective projects to enable this feature`);
+                            parentObj = {};
+                        });
+                    }
+                    const task = yield client.tasks.create(Object.assign(Object.assign({}, taskObjBase), parentObj));
                     (0, core_1.setOutput)('task_url', task.permalink_url);
                     (0, core_1.setOutput)('result', 'created');
                     const sectionId = (0, core_1.getInput)('move_to_section_id');

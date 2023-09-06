@@ -206,14 +206,7 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`
       if (prTask.data.length === 0) {
         // task doesn't exist, create a new one
         info('Creating new PR task')
-        let parentID
-
-        if (asanaTaskMatch) {
-          info(`Found Asana task mention with parent ID: ${asanaTaskMatch[1]}`)
-          parentID = asanaTaskMatch[1]
-        }
-
-        const task = await client.tasks.create({
+        const taskObjBase = {
           assignee: requestor,
           workspace: ASANA_WORKSPACE_ID,
           // eslint-disable-next-line camelcase
@@ -221,11 +214,26 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`
             [customFields.url.gid]: htmlUrl,
             [customFields.status.gid]: statusGid
           },
-          parent: parentID,
           notes,
           name: title,
           projects: [PROJECT_ID]
-        })
+        }
+        let parentObj = {}
+
+        if (asanaTaskMatch) {
+          info(`Found Asana task mention with parent ID: ${asanaTaskMatch[1]}`)
+          const parentID = asanaTaskMatch[1]
+          parentObj = {parent: parentID}
+
+          // Verify we can access parent or we can't add it
+          const parent = await client.tasks.findById(parentID).catch(e => {
+            info(`Can't access parent task: ${parentID}: ${e}`)
+            info(`Add 'dax' user to respective projects to enable this feature`)
+            parentObj = {}
+          })
+        }
+
+        const task = await client.tasks.create({...taskObjBase, ...parentObj})
         setOutput('task_url', task.permalink_url)
         setOutput('result', 'created')
         const sectionId = getInput('move_to_section_id')
