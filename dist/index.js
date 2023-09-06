@@ -162,7 +162,8 @@ function run() {
                 const title = `${payload.repository.full_name}#${payload.pull_request.number} - ${payload.pull_request.title}`;
                 const body = payload.pull_request.body || 'Empty description';
                 // Skip any action on PRs with this title
-                if (title.startsWith('Release: ')) {
+                if (payload.pull_request.title.startsWith('Release: ')) {
+                    (0, core_1.info)(`Skipping Asana sync for release PR`);
                     return;
                 }
                 // look for an existing task
