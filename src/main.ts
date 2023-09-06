@@ -183,7 +183,8 @@ async function run(): Promise<void> {
       const body = payload.pull_request.body || 'Empty description'
 
       // Skip any action on PRs with this title
-      if (title.startsWith('Release: ')) {
+      if (payload.pull_request.title.startsWith('Release: ')) {
+        info(`Skipping Asana sync for release PR`)
         return
       }
 
