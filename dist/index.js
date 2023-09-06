@@ -41,6 +41,13 @@ if (SKIPPED_USERS === '') {
     SKIPPED_USERS = 'bhall,tommy,aaron,viktor';
 }
 const SKIPPED_USERS_LIST = SKIPPED_USERS.split(',');
+// Handle list of projects where we don't want to automatically close tasks
+let NO_AUTOCLOSE_PROJECTS = (0, core_1.getInput)('NO_AUTOCLOSE_PROJECTS');
+if (NO_AUTOCLOSE_PROJECTS === '') {
+    // No autoclose if task is in REVIEW/RELEASE project
+    NO_AUTOCLOSE_PROJECTS = '11984721910118';
+}
+const NO_AUTOCLOSE_LIST = NO_AUTOCLOSE_PROJECTS.split(',');
 function getUserFromLogin(login) {
     let mail = MAIL_MAP[login];
     if (mail === undefined) {
@@ -174,6 +181,7 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`;
                     (0, core_1.info)('Creating new PR task');
                     let parentID;
                     if (asanaTaskMatch) {
+                        (0, core_1.info)(`Found Asana task mention with parent ID: ${asanaTaskMatch[1]}`);
                         parentID = asanaTaskMatch[1];
                     }
                     const task = yield client.tasks.create({
@@ -203,13 +211,26 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`;
                     const taskId = prTask.data[0].gid;
                     (0, core_1.setOutput)('task_url', prTask.data[0].permalink_url);
                     (0, core_1.setOutput)('result', 'updated');
+                    // Whether we want to close the PR task
+                    let closeTask = false;
                     if (payload.pull_request.state === 'closed') {
+                        (0, core_1.info)(`Pull request closed. Closing any remaining subtasks`);
                         // Close any remaining review tasks when PR is merged
                         closeSubtasks(taskId);
+                        // Unless the task is in specific projects automatically close
+                        closeTask = true;
+                        const task = yield client.tasks.findById(taskId);
+                        for (const membership of task.memberships) {
+                            if (NO_AUTOCLOSE_LIST.includes(membership.project.gid)) {
+                                (0, core_1.info)(`Tasks is in one of NO_AUTOCLOSE_PROJECTS. Not closing`);
+                                closeTask = false;
+                            }
+                        }
                     }
                     yield client.tasks.updateTask(taskId, {
                         name: title,
                         notes,
+                        completed: closeTask,
                         // eslint-disable-next-line camelcase
                         custom_fields: {
                             [customFields.status.gid]: statusGid

@@ -27,7 +27,6 @@ const client = Client.create({
 }).useAccessToken(getInput('ASANA_ACCESS_TOKEN', {required: true}))
 const ASANA_WORKSPACE_ID = getInput('ASANA_WORKSPACE_ID', {required: true})
 const PROJECT_ID = getInput('ASANA_PROJECT_ID', {required: true})
-
 // Users which will not receive PRs/reviews tasks (will be remapped to dax)
 let SKIPPED_USERS = getInput('SKIPPED_USERS')
 
@@ -36,6 +35,14 @@ if (SKIPPED_USERS === '') {
   SKIPPED_USERS = 'bhall,tommy,aaron,viktor'
 }
 const SKIPPED_USERS_LIST = SKIPPED_USERS.split(',')
+
+// Handle list of projects where we don't want to automatically close tasks
+let NO_AUTOCLOSE_PROJECTS = getInput('NO_AUTOCLOSE_PROJECTS')
+if (NO_AUTOCLOSE_PROJECTS === '') {
+  // No autoclose if task is in REVIEW/RELEASE project
+  NO_AUTOCLOSE_PROJECTS = '11984721910118'
+}
+const NO_AUTOCLOSE_LIST = NO_AUTOCLOSE_PROJECTS.split(',')
 
 function getUserFromLogin(login: string): string {
   let mail = MAIL_MAP[login]
@@ -202,6 +209,7 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`
         let parentID
 
         if (asanaTaskMatch) {
+          info(`Found Asana task mention with parent ID: ${asanaTaskMatch[1]}`)
           parentID = asanaTaskMatch[1]
         }
 
@@ -231,13 +239,29 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`
         const taskId = prTask.data[0].gid
         setOutput('task_url', prTask.data[0].permalink_url)
         setOutput('result', 'updated')
+
+        // Whether we want to close the PR task
+        let closeTask = false
+
         if (payload.pull_request.state === 'closed') {
+          info(`Pull request closed. Closing any remaining subtasks`)
           // Close any remaining review tasks when PR is merged
           closeSubtasks(taskId)
+
+          // Unless the task is in specific projects automatically close
+          closeTask = true
+          const task = await client.tasks.findById(taskId)
+          for (const membership of task.memberships) {
+            if (NO_AUTOCLOSE_LIST.includes(membership.project.gid)) {
+              info(`Tasks is in one of NO_AUTOCLOSE_PROJECTS. Not closing`)
+              closeTask = false
+            }
+          }
         }
         await client.tasks.updateTask(taskId, {
           name: title,
           notes,
+          completed: closeTask,
           // eslint-disable-next-line camelcase
           custom_fields: {
             [customFields.status.gid]: statusGid
