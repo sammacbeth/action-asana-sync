@@ -123,9 +123,8 @@ function updateReviewSubTasks(taskId) {
             if (reviewPayload.action === 'submitted' &&
                 reviewPayload.review.state === 'approved') {
                 const reviewer = reviewPayload.review.user;
-                (0, core_1.info)(`PR approved by ${reviewer.login}. Updating subtasks.`);
+                (0, core_1.info)(`PR approved by ${reviewer.login}. Updating review subtask.`);
                 const subtask = yield createOrReopenReviewSubtask(taskId, reviewer.login, subtasks);
-                (0, core_1.info)(`Processing PR review from ${reviewer.login}`);
                 if (subtask !== null) {
                     (0, core_1.info)(`Completing review subtask for ${reviewer.login}: ${subtask.gid}`);
                     yield client.tasks.updateTask(subtask.gid, { completed: true });
@@ -184,7 +183,6 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`;
                     // task doesn't exist, create a new one
                     (0, core_1.info)('Creating new PR task');
                     const taskObjBase = {
-                        assignee: requestor,
                         workspace: ASANA_WORKSPACE_ID,
                         // eslint-disable-next-line camelcase
                         custom_fields: {

@@ -210,7 +210,6 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`
         // task doesn't exist, create a new one
         info('Creating new PR task')
         const taskObjBase = {
-          assignee: requestor,
           workspace: ASANA_WORKSPACE_ID,
           // eslint-disable-next-line camelcase
           custom_fields: {
