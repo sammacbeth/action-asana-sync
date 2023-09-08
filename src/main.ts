@@ -126,20 +126,21 @@ async function updateReviewSubTasks(taskId: string): Promise<void> {
     }
   } else if (context.eventName === 'pull_request_review') {
     const reviewPayload = context.payload as PullRequestReviewEvent
-    const reviewer = reviewPayload.review.user
-    const subtask = await createOrReopenReviewSubtask(
-      taskId,
-      reviewer.login,
-      subtasks
-    )
-    info(`Processing PR review from ${reviewer.login}`)
     if (
-      subtask !== null &&
       reviewPayload.action === 'submitted' &&
       reviewPayload.review.state === 'approved'
     ) {
-      info(`Completing review subtask for ${reviewer.login}: ${subtask.gid}`)
-      await client.tasks.updateTask(subtask.gid, {completed: true})
+      const reviewer = reviewPayload.review.user
+      info(`PR approved by ${reviewer.login}. Updating review subtask.`)
+      const subtask = await createOrReopenReviewSubtask(
+        taskId,
+        reviewer.login,
+        subtasks
+      )
+      if (subtask !== null) {
+        info(`Completing review subtask for ${reviewer.login}: ${subtask.gid}`)
+        await client.tasks.updateTask(subtask.gid, {completed: true})
+      }
     }
   }
 }
@@ -160,6 +161,7 @@ async function run(): Promise<void> {
         context.eventName
       )
     ) {
+      info(`Event JSON: \n${JSON.stringify(context, null, 2)}`)
       const payload = context.payload as PullRequestEvent
       const htmlUrl = payload.pull_request.html_url
       const prAuthor = payload.pull_request.user.login
