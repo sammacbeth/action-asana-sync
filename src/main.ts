@@ -160,6 +160,7 @@ async function run(): Promise<void> {
         context.eventName
       )
     ) {
+      info(`Event JSON: \n${JSON.stringify(context, null, 2)}`)
       const payload = context.payload as PullRequestEvent
       const htmlUrl = payload.pull_request.html_url
       const prAuthor = payload.pull_request.user.login

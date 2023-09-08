@@ -146,6 +146,7 @@ function run() {
         try {
             (0, core_1.info)(`Event: ${github_1.context.eventName}.`);
             if (['pull_request', 'pull_request_target', 'pull_request_review'].includes(github_1.context.eventName)) {
+                (0, core_1.info)(`Event JSON: \n${JSON.stringify(github_1.context, null, 2)}`);
                 const payload = github_1.context.payload;
                 const htmlUrl = payload.pull_request.html_url;
                 const prAuthor = payload.pull_request.user.login;
