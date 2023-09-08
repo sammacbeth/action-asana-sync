@@ -120,14 +120,16 @@ function updateReviewSubTasks(taskId) {
         }
         else if (github_1.context.eventName === 'pull_request_review') {
             const reviewPayload = github_1.context.payload;
-            const reviewer = reviewPayload.review.user;
-            const subtask = yield createOrReopenReviewSubtask(taskId, reviewer.login, subtasks);
-            (0, core_1.info)(`Processing PR review from ${reviewer.login}`);
-            if (subtask !== null &&
-                reviewPayload.action === 'submitted' &&
+            if (reviewPayload.action === 'submitted' &&
                 reviewPayload.review.state === 'approved') {
-                (0, core_1.info)(`Completing review subtask for ${reviewer.login}: ${subtask.gid}`);
-                yield client.tasks.updateTask(subtask.gid, { completed: true });
+                const reviewer = reviewPayload.review.user;
+                (0, core_1.info)(`PR approved by ${reviewer.login}. Updating subtasks.`);
+                const subtask = yield createOrReopenReviewSubtask(taskId, reviewer.login, subtasks);
+                (0, core_1.info)(`Processing PR review from ${reviewer.login}`);
+                if (subtask !== null) {
+                    (0, core_1.info)(`Completing review subtask for ${reviewer.login}: ${subtask.gid}`);
+                    yield client.tasks.updateTask(subtask.gid, { completed: true });
+                }
             }
         }
     });
