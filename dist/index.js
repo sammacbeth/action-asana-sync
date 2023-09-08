@@ -147,6 +147,7 @@ function findPRTask(prURL, urlFieldGID, project) {
         const prTasks = yield client.tasks.searchInWorkspace(ASANA_WORKSPACE_ID, {
             [`custom_fields.${urlFieldGID}.value`]: prURL
         });
+        prTasks.data = [];
         if (prTasks.data.length > 0) {
             (0, core_1.info)(`Found PR task using searchInWorkspace: ${prTasks.data[0].gid}`);
             return prTasks.data[0];

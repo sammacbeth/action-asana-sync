@@ -162,6 +162,7 @@ async function findPRTask(
   const prTasks = await client.tasks.searchInWorkspace(ASANA_WORKSPACE_ID, {
     [`custom_fields.${urlFieldGID}.value`]: prURL
   })
+  prTasks.data = []
   if (prTasks.data.length > 0) {
     info(`Found PR task using searchInWorkspace: ${prTasks.data[0].gid}`)
     return prTasks.data[0]
