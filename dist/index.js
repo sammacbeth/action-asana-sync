@@ -141,6 +141,40 @@ function closeSubtasks(taskId) {
         }
     });
 }
+function findPRTask(prURL, urlFieldGID, project) {
+    return __awaiter(this, void 0, void 0, function* () {
+        // Let's first try to seaech using PR URL
+        const prTasks = yield client.tasks.searchInWorkspace(ASANA_WORKSPACE_ID, {
+            [`custom_fields.${urlFieldGID}.value`]: prURL
+        });
+        prTasks.data = [];
+        if (prTasks.data.length > 0) {
+            (0, core_1.info)(`Found PR task using searchInWorkspace: ${prTasks.data[0].gid}`);
+            return prTasks.data[0];
+        }
+        else {
+            // searchInWorkspace can fail for recently created Asana tasks. Let's look
+            // at 100 most recent tasks in destination project
+            // https://developers.asana.com/reference/searchtasksforworkspace#eventual-consistency
+            const projectTasks = yield client.tasks.findByProject(project, {
+                // eslint-disable-next-line camelcase
+                opt_fields: 'custom_fields',
+                limit: 100
+            });
+            for (const task of projectTasks.data) {
+                (0, core_1.info)(`Checking task ${task.gid} for PR link`);
+                for (const field of task.custom_fields) {
+                    if (field.gid === urlFieldGID && field.display_value === prURL) {
+                        (0, core_1.info)(`Found existing task ID ${task.gid} for PR ${prURL}`);
+                        return task;
+                    }
+                }
+            }
+        }
+        (0, core_1.info)(`No matching Asana task found for PR ${prURL}`);
+        return null;
+    });
+}
 function run() {
     var _a, _b;
     return __awaiter(this, void 0, void 0, function* () {
@@ -169,9 +203,7 @@ function run() {
                     return;
                 }
                 // look for an existing task
-                const prTask = yield client.tasks.searchInWorkspace(ASANA_WORKSPACE_ID, {
-                    [`custom_fields.${customFields.url.gid}.value`]: htmlUrl
-                });
+                const prTask = yield findPRTask(htmlUrl, customFields.url.gid, PROJECT_ID);
                 const notes = `
 Note: This description is automatically updated from Github. Changes will be LOST.
 
@@ -179,7 +211,7 @@ ${htmlUrl}
 
 ${body.replace(/^---$[\s\S]*/gm, '')}`;
                 const asanaTaskMatch = notes.match(/Asana:.*https:\/\/app.asana.*\/([0-9]+).*/);
-                if (prTask.data.length === 0) {
+                if (!prTask) {
                     // task doesn't exist, create a new one
                     (0, core_1.info)('Creating new PR task');
                     const taskObjBase = {
@@ -216,9 +248,8 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`;
                     // TODO: attachments
                 }
                 else {
-                    (0, core_1.info)(`Found task ${JSON.stringify(prTask.data[0])}`);
-                    const taskId = prTask.data[0].gid;
-                    (0, core_1.setOutput)('task_url', prTask.data[0].permalink_url);
+                    const taskId = prTask.gid;
+                    (0, core_1.setOutput)('task_url', prTask.permalink_url);
                     (0, core_1.setOutput)('result', 'updated');
                     // Whether we want to close the PR task
                     let closeTask = false;

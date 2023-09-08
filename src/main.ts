@@ -153,6 +153,43 @@ async function closeSubtasks(taskId: string) {
   }
 }
 
+async function findPRTask(
+  prURL: string,
+  urlFieldGID: string,
+  project: string
+): Promise<asana.resources.Tasks.Type | null> {
+  // Let's first try to seaech using PR URL
+  const prTasks = await client.tasks.searchInWorkspace(ASANA_WORKSPACE_ID, {
+    [`custom_fields.${urlFieldGID}.value`]: prURL
+  })
+  prTasks.data = []
+  if (prTasks.data.length > 0) {
+    info(`Found PR task using searchInWorkspace: ${prTasks.data[0].gid}`)
+    return prTasks.data[0]
+  } else {
+    // searchInWorkspace can fail for recently created Asana tasks. Let's look
+    // at 100 most recent tasks in destination project
+    // https://developers.asana.com/reference/searchtasksforworkspace#eventual-consistency
+    const projectTasks = await client.tasks.findByProject(project, {
+      // eslint-disable-next-line camelcase
+      opt_fields: 'custom_fields',
+      limit: 100
+    })
+
+    for (const task of projectTasks.data) {
+      info(`Checking task ${task.gid} for PR link`)
+      for (const field of task.custom_fields) {
+        if (field.gid === urlFieldGID && field.display_value === prURL) {
+          info(`Found existing task ID ${task.gid} for PR ${prURL}`)
+          return task
+        }
+      }
+    }
+  }
+  info(`No matching Asana task found for PR ${prURL}`)
+  return null
+}
+
 async function run(): Promise<void> {
   try {
     info(`Event: ${context.eventName}.`)
@@ -191,9 +228,7 @@ async function run(): Promise<void> {
       }
 
       // look for an existing task
-      const prTask = await client.tasks.searchInWorkspace(ASANA_WORKSPACE_ID, {
-        [`custom_fields.${customFields.url.gid}.value`]: htmlUrl
-      })
+      const prTask = await findPRTask(htmlUrl, customFields.url.gid, PROJECT_ID)
 
       const notes = `
 Note: This description is automatically updated from Github. Changes will be LOST.
@@ -206,7 +241,7 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`
         /Asana:.*https:\/\/app.asana.*\/([0-9]+).*/
       )
 
-      if (prTask.data.length === 0) {
+      if (!prTask) {
         // task doesn't exist, create a new one
         info('Creating new PR task')
         const taskObjBase = {
@@ -245,9 +280,8 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`
         await updateReviewSubTasks(task.gid)
         // TODO: attachments
       } else {
-        info(`Found task ${JSON.stringify(prTask.data[0])}`)
-        const taskId = prTask.data[0].gid
-        setOutput('task_url', prTask.data[0].permalink_url)
+        const taskId = prTask.gid
+        setOutput('task_url', prTask.permalink_url)
         setOutput('result', 'updated')
 
         // Whether we want to close the PR task
