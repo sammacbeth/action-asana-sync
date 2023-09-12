@@ -19,6 +19,11 @@ const MAIL_MAP: {[key: string]: string} = {
 }
 
 type PRState = 'Open' | 'Closed' | 'Merged' | 'Approved' | 'Draft'
+
+type PRFields = {
+  url: asana.resources.CustomField
+  status: asana.resources.CustomField
+}
 const client = Client.create({
   defaultHeaders: {
     'asana-enable':
@@ -190,139 +195,167 @@ async function findPRTask(
   return null
 }
 
+async function createPRTask(
+  title: string,
+  notes: string,
+  prStatus: string,
+  customFields: PRFields
+): Promise<asana.resources.Tasks.Type> {
+  info('Creating new PR task')
+  const payload = context.payload as PullRequestEvent
+  const taskObjBase = {
+    workspace: ASANA_WORKSPACE_ID,
+    // eslint-disable-next-line camelcase
+    custom_fields: {
+      [customFields.url.gid]: payload.pull_request.html_url,
+      [customFields.status.gid]: prStatus
+    },
+    notes,
+    name: title,
+    projects: [PROJECT_ID]
+  }
+  let parentObj = {}
+
+  const asanaTaskMatch = notes.match(
+    /Asana:.*https:\/\/app.asana.*\/([0-9]+).*/
+  )
+  if (asanaTaskMatch) {
+    info(`Found Asana task mention with parent ID: ${asanaTaskMatch[1]}`)
+    const parentID = asanaTaskMatch[1]
+    parentObj = {parent: parentID}
+
+    // Verify we can access parent or we can't add it
+    await client.tasks.findById(parentID).catch(e => {
+      info(`Can't access parent task: ${parentID}: ${e}`)
+      info(`Add 'dax' user to respective projects to enable this feature`)
+      parentObj = {}
+    })
+  }
+
+  return client.tasks.create({...taskObjBase, ...parentObj})
+}
+
 async function run(): Promise<void> {
   try {
     info(`Event: ${context.eventName}.`)
     if (
-      ['pull_request', 'pull_request_target', 'pull_request_review'].includes(
+      !['pull_request', 'pull_request_target', 'pull_request_review'].includes(
         context.eventName
       )
     ) {
-      info(`Event JSON: \n${JSON.stringify(context, null, 2)}`)
-      const payload = context.payload as PullRequestEvent
-      const htmlUrl = payload.pull_request.html_url
-      const prAuthor = payload.pull_request.user.login
-      let requestor = getUserFromLogin(prAuthor)
-      if (SKIPPED_USERS_LIST.includes(prAuthor)) {
-        info(
-          `Changing assignee of PR review to dax - ${prAuthor} is member of SKIPPED_USERS`
-        )
-        requestor = 'dax@duckduckgo.com'
-      }
-      info(`PR url: ${htmlUrl}`)
-      info(`Action: ${payload.action}`)
-      const customFields = await findCustomFields(ASANA_WORKSPACE_ID)
+      info('Only runs for PR changes and reviews')
+      return
+    }
 
-      // PR metadata
-      const statusGid =
-        customFields.status.enum_options?.find(
-          f => f.name === getPRState(payload.pull_request)
-        )?.gid || ''
-      const title = `${payload.repository.full_name}#${payload.pull_request.number} - ${payload.pull_request.title}`
-      const body = payload.pull_request.body || 'Empty description'
+    info(`Event JSON: \n${JSON.stringify(context, null, 2)}`)
+    const payload = context.payload as PullRequestEvent
+    // Skip any action on PRs with this title
+    if (payload.pull_request.title.startsWith('Release: ')) {
+      info(`Skipping Asana sync for release PR`)
+      return
+    }
 
-      // Skip any action on PRs with this title
-      if (payload.pull_request.title.startsWith('Release: ')) {
-        info(`Skipping Asana sync for release PR`)
-        return
-      }
+    const htmlUrl = payload.pull_request.html_url
+    const prAuthor = payload.pull_request.user.login
+    let requestor = getUserFromLogin(prAuthor)
+    if (SKIPPED_USERS_LIST.includes(prAuthor)) {
+      info(
+        `Changing assignee of PR review to dax - ${prAuthor} is member of SKIPPED_USERS`
+      )
+      requestor = 'dax@duckduckgo.com'
+    }
+    info(`PR url: ${htmlUrl}`)
+    info(`Action: ${payload.action}`)
+    const customFields = await findCustomFields(ASANA_WORKSPACE_ID)
 
-      // look for an existing task
-      const prTask = await findPRTask(htmlUrl, customFields.url.gid, PROJECT_ID)
+    // PR metadata
+    const statusGid =
+      customFields.status.enum_options?.find(
+        f => f.name === getPRState(payload.pull_request)
+      )?.gid || ''
+    const title = `${payload.repository.full_name}#${payload.pull_request.number} - ${payload.pull_request.title}`
+    const body = payload.pull_request.body || 'Empty description'
 
-      const notes = `
+    const notes = `
 Note: This description is automatically updated from Github. Changes will be LOST.
+Task is intentionally unassigned. PR authors can assign themselves and add this
+task to additional projects (for example https://app.asana.com/0/11984721910118/1204991209231483)
+
+Code reviews will be created as subtasks and assigned to reviewers.
 
 ${htmlUrl}
 
 ${body.replace(/^---$[\s\S]*/gm, '')}`
 
-      const asanaTaskMatch = notes.match(
-        /Asana:.*https:\/\/app.asana.*\/([0-9]+).*/
-      )
+    let task
+    if (['opened'].includes(payload.action)) {
+      task = await createPRTask(title, notes, statusGid, customFields)
+      setOutput('result', 'created')
+    } else {
+      const maxRetries = 5
+      let retries = 0
 
-      if (!prTask) {
-        // task doesn't exist, create a new one
-        info('Creating new PR task')
-        const taskObjBase = {
-          workspace: ASANA_WORKSPACE_ID,
-          // eslint-disable-next-line camelcase
-          custom_fields: {
-            [customFields.url.gid]: htmlUrl,
-            [customFields.status.gid]: statusGid
-          },
-          notes,
-          name: title,
-          projects: [PROJECT_ID]
+      while (retries < maxRetries) {
+        // Wait for PR to appear
+        task = await findPRTask(htmlUrl, customFields.url.gid, PROJECT_ID)
+        if (task) {
+          setOutput('result', 'updated')
+          break
         }
-        let parentObj = {}
-
-        if (asanaTaskMatch) {
-          info(`Found Asana task mention with parent ID: ${asanaTaskMatch[1]}`)
-          const parentID = asanaTaskMatch[1]
-          parentObj = {parent: parentID}
-
-          // Verify we can access parent or we can't add it
-          const parent = await client.tasks.findById(parentID).catch(e => {
-            info(`Can't access parent task: ${parentID}: ${e}`)
-            info(`Add 'dax' user to respective projects to enable this feature`)
-            parentObj = {}
-          })
-        }
-
-        const task = await client.tasks.create({...taskObjBase, ...parentObj})
-        setOutput('task_url', task.permalink_url)
-        setOutput('result', 'created')
-        const sectionId = getInput('move_to_section_id')
-        if (sectionId) {
-          await client.sections.addTask(sectionId, {task: task.gid})
-        }
-        await updateReviewSubTasks(task.gid)
-        // TODO: attachments
-      } else {
-        const taskId = prTask.gid
-        setOutput('task_url', prTask.permalink_url)
-        setOutput('result', 'updated')
-
-        // Whether we want to close the PR task
-        let closeTask = false
-
-        if (payload.pull_request.state === 'closed') {
-          info(`Pull request closed. Closing any remaining subtasks`)
-          // Close any remaining review tasks when PR is merged
-          closeSubtasks(taskId)
-
-          // Unless the task is in specific projects automatically close
-          closeTask = true
-          const task = await client.tasks.findById(taskId)
-          for (const membership of task.memberships) {
-            if (NO_AUTOCLOSE_LIST.includes(membership.project.gid)) {
-              info(`Tasks is in one of NO_AUTOCLOSE_PROJECTS. Not closing`)
-              closeTask = false
-            }
-          }
-        }
-        await client.tasks.updateTask(taskId, {
-          name: title,
-          notes,
-          completed: closeTask,
-          // eslint-disable-next-line camelcase
-          custom_fields: {
-            [customFields.status.gid]: statusGid
-          }
-        })
-        await updateReviewSubTasks(taskId)
+        info(`PR task not found yet. Sleeping...`)
+        await new Promise(resolve => setTimeout(resolve, 20000))
+        retries++
       }
-      return
+
+      if (!task) {
+        throw new Error('No PR task found. Bailing out')
+      }
     }
-    info('Only runs for PR changes')
-    // core.setOutput('time', new Date().toTimeString())
+
+    setOutput('task_url', task.permalink_url)
+    const sectionId = getInput('move_to_section_id')
+    if (sectionId) {
+      await client.sections.addTask(sectionId, {task: task.gid})
+    }
+    const taskId = task.gid
+    // Whether we want to close the PR task
+    let closeTask = false
+
+    // Handle PR close events (merged/closed)
+    if (['closed'].includes(payload.action)) {
+      info(`Pull request closed. Closing any remaining subtasks`)
+      // Close any remaining review tasks when PR is merged
+      closeSubtasks(taskId)
+
+      // Unless the task is in specific projects automatically close
+      closeTask = true
+      info(`Considering whether to close PR task itself...`)
+      const fullTask = await client.tasks.findById(taskId)
+      for (const membership of fullTask.memberships) {
+        if (NO_AUTOCLOSE_LIST.includes(membership.project.gid)) {
+          info(`Tasks is in one of NO_AUTOCLOSE_PROJECTS. Not closing`)
+          closeTask = false
+        }
+      }
+    } else {
+      await updateReviewSubTasks(taskId)
+    }
+
+    await client.tasks.updateTask(taskId, {
+      name: title,
+      notes,
+      completed: closeTask,
+      // eslint-disable-next-line camelcase
+      custom_fields: {
+        [customFields.status.gid]: statusGid
+      }
+    })
   } catch (error) {
     if (error instanceof Error) setFailed(error.message)
   }
 }
 
-async function findCustomFields(workspaceGid: string) {
+async function findCustomFields(workspaceGid: string): Promise<PRFields> {
   const apiResponse = await client.customFields.getCustomFieldsForWorkspace(
     workspaceGid
   )
@@ -345,7 +378,7 @@ async function findCustomFields(workspaceGid: string) {
     throw new Error('Custom fields are missing. Please create them')
   }
   return {
-    url: githubUrlField,
+    url: githubUrlField as asana.resources.CustomField,
     status: githubStatusField as asana.resources.CustomField
   }
 }
