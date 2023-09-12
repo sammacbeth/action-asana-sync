@@ -211,102 +211,95 @@ function run() {
     return __awaiter(this, void 0, void 0, function* () {
         try {
             (0, core_1.info)(`Event: ${github_1.context.eventName}.`);
-            if (['pull_request', 'pull_request_target', 'pull_request_review'].includes(github_1.context.eventName)) {
-                (0, core_1.info)(`Event JSON: \n${JSON.stringify(github_1.context, null, 2)}`);
-                const payload = github_1.context.payload;
-                const htmlUrl = payload.pull_request.html_url;
-                const prAuthor = payload.pull_request.user.login;
-                let requestor = getUserFromLogin(prAuthor);
-                if (SKIPPED_USERS_LIST.includes(prAuthor)) {
-                    (0, core_1.info)(`Changing assignee of PR review to dax - ${prAuthor} is member of SKIPPED_USERS`);
-                    requestor = 'dax@duckduckgo.com';
-                }
-                (0, core_1.info)(`PR url: ${htmlUrl}`);
-                (0, core_1.info)(`Action: ${payload.action}`);
-                const customFields = yield findCustomFields(ASANA_WORKSPACE_ID);
-                // PR metadata
-                const statusGid = ((_b = (_a = customFields.status.enum_options) === null || _a === void 0 ? void 0 : _a.find(f => f.name === getPRState(payload.pull_request))) === null || _b === void 0 ? void 0 : _b.gid) || '';
-                const title = `${payload.repository.full_name}#${payload.pull_request.number} - ${payload.pull_request.title}`;
-                const body = payload.pull_request.body || 'Empty description';
-                // Skip any action on PRs with this title
-                if (payload.pull_request.title.startsWith('Release: ')) {
-                    (0, core_1.info)(`Skipping Asana sync for release PR`);
-                    return;
-                }
-                // look for an existing task
-                const prTask = yield findPRTask(htmlUrl, customFields.url.gid, PROJECT_ID);
-                const notes = `
+            if (!['pull_request', 'pull_request_target', 'pull_request_review'].includes(github_1.context.eventName)) {
+                (0, core_1.info)('Only runs for PR changes and reviews');
+                return;
+            }
+            (0, core_1.info)(`Event JSON: \n${JSON.stringify(github_1.context, null, 2)}`);
+            const payload = github_1.context.payload;
+            // Skip any action on PRs with this title
+            if (payload.pull_request.title.startsWith('Release: ')) {
+                (0, core_1.info)(`Skipping Asana sync for release PR`);
+                return;
+            }
+            const htmlUrl = payload.pull_request.html_url;
+            const prAuthor = payload.pull_request.user.login;
+            let requestor = getUserFromLogin(prAuthor);
+            if (SKIPPED_USERS_LIST.includes(prAuthor)) {
+                (0, core_1.info)(`Changing assignee of PR review to dax - ${prAuthor} is member of SKIPPED_USERS`);
+                requestor = 'dax@duckduckgo.com';
+            }
+            (0, core_1.info)(`PR url: ${htmlUrl}`);
+            (0, core_1.info)(`Action: ${payload.action}`);
+            const customFields = yield findCustomFields(ASANA_WORKSPACE_ID);
+            // PR metadata
+            const statusGid = ((_b = (_a = customFields.status.enum_options) === null || _a === void 0 ? void 0 : _a.find(f => f.name === getPRState(payload.pull_request))) === null || _b === void 0 ? void 0 : _b.gid) || '';
+            const title = `${payload.repository.full_name}#${payload.pull_request.number} - ${payload.pull_request.title}`;
+            const body = payload.pull_request.body || 'Empty description';
+            const notes = `
 Note: This description is automatically updated from Github. Changes will be LOST.
 
 ${htmlUrl}
 
 ${body.replace(/^---$[\s\S]*/gm, '')}`;
-                if (!prTask) {
-                    let task;
-                    if (payload.action === 'opened') {
-                        task = yield createPRTask(title, notes, statusGid, customFields);
-                        (0, core_1.setOutput)('result', 'created');
-                    }
-                    else {
-                        const maxRetries = 5;
-                        let retries = 0;
-                        while (retries < maxRetries) {
-                            // Wait for PR to appear
-                            (0, core_1.info)(`PR task not found yet. Sleeping for 10s...`);
-                            yield new Promise(resolve => setTimeout(resolve, 20000));
-                            task = yield findPRTask(htmlUrl, customFields.url.gid, PROJECT_ID);
-                            if (task) {
-                                (0, core_1.info)(`Found PR task ${task.gid}`);
-                                break;
-                            }
-                            retries++;
-                        }
-                        throw new Error('No PR task found. Bailing out');
-                    }
-                    // task doesn't exist, create a new one
-                    (0, core_1.setOutput)('task_url', task.permalink_url);
-                    const sectionId = (0, core_1.getInput)('move_to_section_id');
-                    if (sectionId) {
-                        yield client.sections.addTask(sectionId, { task: task.gid });
-                    }
-                    yield updateReviewSubTasks(task.gid);
-                    // TODO: attachments
-                }
-                else {
-                    const taskId = prTask.gid;
-                    (0, core_1.setOutput)('task_url', prTask.permalink_url);
-                    (0, core_1.setOutput)('result', 'updated');
-                    // Whether we want to close the PR task
-                    let closeTask = false;
-                    if (payload.pull_request.state === 'closed') {
-                        (0, core_1.info)(`Pull request closed. Closing any remaining subtasks`);
-                        // Close any remaining review tasks when PR is merged
-                        closeSubtasks(taskId);
-                        // Unless the task is in specific projects automatically close
-                        closeTask = true;
-                        const task = yield client.tasks.findById(taskId);
-                        for (const membership of task.memberships) {
-                            if (NO_AUTOCLOSE_LIST.includes(membership.project.gid)) {
-                                (0, core_1.info)(`Tasks is in one of NO_AUTOCLOSE_PROJECTS. Not closing`);
-                                closeTask = false;
-                            }
-                        }
-                    }
-                    yield client.tasks.updateTask(taskId, {
-                        name: title,
-                        notes,
-                        completed: closeTask,
-                        // eslint-disable-next-line camelcase
-                        custom_fields: {
-                            [customFields.status.gid]: statusGid
-                        }
-                    });
-                    yield updateReviewSubTasks(taskId);
-                }
-                return;
+            let task;
+            if (['opened'].includes(payload.action)) {
+                task = yield createPRTask(title, notes, statusGid, customFields);
+                (0, core_1.setOutput)('result', 'created');
             }
-            (0, core_1.info)('Only runs for PR changes');
-            // core.setOutput('time', new Date().toTimeString())
+            else {
+                const maxRetries = 5;
+                let retries = 0;
+                while (retries < maxRetries) {
+                    // Wait for PR to appear
+                    task = yield findPRTask(htmlUrl, customFields.url.gid, PROJECT_ID);
+                    if (task) {
+                        (0, core_1.setOutput)('result', 'updated');
+                        break;
+                    }
+                    (0, core_1.info)(`PR task not found yet. Sleeping...`);
+                    yield new Promise(resolve => setTimeout(resolve, 20000));
+                    retries++;
+                }
+                if (!task) {
+                    throw new Error('No PR task found. Bailing out');
+                }
+            }
+            (0, core_1.setOutput)('task_url', task.permalink_url);
+            const sectionId = (0, core_1.getInput)('move_to_section_id');
+            if (sectionId) {
+                yield client.sections.addTask(sectionId, { task: task.gid });
+            }
+            const taskId = task.gid;
+            // Whether we want to close the PR task
+            let closeTask = false;
+            if (['closed'].includes(payload.action)) {
+                (0, core_1.info)(`Pull request closed. Closing any remaining subtasks`);
+                // Close any remaining review tasks when PR is merged
+                closeSubtasks(taskId);
+                // Unless the task is in specific projects automatically close
+                closeTask = true;
+                (0, core_1.info)(`Considering whether to close PR task itself...`);
+                const fullTask = yield client.tasks.findById(taskId);
+                for (const membership of fullTask.memberships) {
+                    if (NO_AUTOCLOSE_LIST.includes(membership.project.gid)) {
+                        (0, core_1.info)(`Tasks is in one of NO_AUTOCLOSE_PROJECTS. Not closing`);
+                        closeTask = false;
+                    }
+                }
+            }
+            else {
+                yield updateReviewSubTasks(taskId);
+            }
+            yield client.tasks.updateTask(taskId, {
+                name: title,
+                notes,
+                completed: closeTask,
+                // eslint-disable-next-line camelcase
+                custom_fields: {
+                    [customFields.status.gid]: statusGid
+                }
+            });
         }
         catch (error) {
             if (error instanceof Error)
