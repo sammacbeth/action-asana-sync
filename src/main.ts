@@ -278,6 +278,10 @@ async function run(): Promise<void> {
 
     const notes = `
 Note: This description is automatically updated from Github. Changes will be LOST.
+Task is intentionally unassigned. PR authors can assign themselves and add this
+task to additional projects (for example https://app.asana.com/0/11984721910118/1204991209231483)
+
+Code reviews will be created as subtasks and assigned to reviewers.
 
 ${htmlUrl}
 
@@ -317,6 +321,7 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`
     // Whether we want to close the PR task
     let closeTask = false
 
+    // Handle PR close events (merged/closed)
     if (['closed'].includes(payload.action)) {
       info(`Pull request closed. Closing any remaining subtasks`)
       // Close any remaining review tasks when PR is merged
