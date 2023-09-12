@@ -19,6 +19,11 @@ const MAIL_MAP: {[key: string]: string} = {
 }
 
 type PRState = 'Open' | 'Closed' | 'Merged' | 'Approved' | 'Draft'
+
+type PRFields = {
+  url: asana.resources.CustomField
+  status: asana.resources.CustomField
+}
 const client = Client.create({
   defaultHeaders: {
     'asana-enable':
@@ -322,7 +327,7 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`
   }
 }
 
-async function findCustomFields(workspaceGid: string) {
+async function findCustomFields(workspaceGid: string): Promise<PRFields> {
   const apiResponse = await client.customFields.getCustomFieldsForWorkspace(
     workspaceGid
   )
@@ -345,7 +350,7 @@ async function findCustomFields(workspaceGid: string) {
     throw new Error('Custom fields are missing. Please create them')
   }
   return {
-    url: githubUrlField,
+    url: githubUrlField as asana.resources.CustomField,
     status: githubStatusField as asana.resources.CustomField
   }
 }
