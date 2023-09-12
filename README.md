@@ -38,3 +38,15 @@ jobs:
           ASANA_WORKSPACE_ID: ${{ secrets.ASANA_WORKSPACE_ID }}
           ASANA_PROJECT_ID: 'GID of project to create the tasks in'
 ```
+
+## Configuration
+
+There are a few additional configuration options that can be used to tweak
+behaviour of this Github Action:
+
+- `NO_AUTOCLOSE_PROJECTS`: By default this action will automatically close PR
+  task it opens. It will not close merged tasks when they are added to projects
+  listed in this variable (comma separated string of IDs). (default: REVIEW/RELEASE project)
+- `SKIPPED_USERS`: Some users don't like receiving reviews in Asana. This is a
+  comma separated list of github usernames that will be ignored (replaced with
+  dax).
