@@ -195,6 +195,46 @@ async function findPRTask(
   return null
 }
 
+async function createPRTask(
+  title: string,
+  notes: string,
+  prStatus: string,
+  customFields: PRFields
+): Promise<asana.resources.Tasks.Type> {
+  info('Creating new PR task')
+  const payload = context.payload as PullRequestEvent
+  const taskObjBase = {
+    workspace: ASANA_WORKSPACE_ID,
+    // eslint-disable-next-line camelcase
+    custom_fields: {
+      [customFields.url.gid]: payload.pull_request.html_url,
+      [customFields.status.gid]: prStatus
+    },
+    notes,
+    name: title,
+    projects: [PROJECT_ID]
+  }
+  let parentObj = {}
+
+  const asanaTaskMatch = notes.match(
+    /Asana:.*https:\/\/app.asana.*\/([0-9]+).*/
+  )
+  if (asanaTaskMatch) {
+    info(`Found Asana task mention with parent ID: ${asanaTaskMatch[1]}`)
+    const parentID = asanaTaskMatch[1]
+    parentObj = {parent: parentID}
+
+    // Verify we can access parent or we can't add it
+    await client.tasks.findById(parentID).catch(e => {
+      info(`Can't access parent task: ${parentID}: ${e}`)
+      info(`Add 'dax' user to respective projects to enable this feature`)
+      parentObj = {}
+    })
+  }
+
+  return client.tasks.create({...taskObjBase, ...parentObj})
+}
+
 async function run(): Promise<void> {
   try {
     info(`Event: ${context.eventName}.`)
@@ -242,42 +282,31 @@ ${htmlUrl}
 
 ${body.replace(/^---$[\s\S]*/gm, '')}`
 
-      const asanaTaskMatch = notes.match(
-        /Asana:.*https:\/\/app.asana.*\/([0-9]+).*/
-      )
-
       if (!prTask) {
+        let task
+        if (payload.action === 'opened') {
+          task = await createPRTask(title, notes, statusGid, customFields)
+          setOutput('result', 'created')
+        } else {
+          const maxRetries = 5
+          let retries = 0
+
+          while (retries < maxRetries) {
+            // Wait for PR to appear
+            info(`PR task not found yet. Sleeping for 10s...`)
+            await new Promise(resolve => setTimeout(resolve, 20000))
+            task = await findPRTask(htmlUrl, customFields.url.gid, PROJECT_ID)
+            if (task) {
+              info(`Found PR task ${task.gid}`)
+              break
+            }
+            retries++
+          }
+
+          throw new Error('No PR task found. Bailing out')
+        }
         // task doesn't exist, create a new one
-        info('Creating new PR task')
-        const taskObjBase = {
-          workspace: ASANA_WORKSPACE_ID,
-          // eslint-disable-next-line camelcase
-          custom_fields: {
-            [customFields.url.gid]: htmlUrl,
-            [customFields.status.gid]: statusGid
-          },
-          notes,
-          name: title,
-          projects: [PROJECT_ID]
-        }
-        let parentObj = {}
-
-        if (asanaTaskMatch) {
-          info(`Found Asana task mention with parent ID: ${asanaTaskMatch[1]}`)
-          const parentID = asanaTaskMatch[1]
-          parentObj = {parent: parentID}
-
-          // Verify we can access parent or we can't add it
-          const parent = await client.tasks.findById(parentID).catch(e => {
-            info(`Can't access parent task: ${parentID}: ${e}`)
-            info(`Add 'dax' user to respective projects to enable this feature`)
-            parentObj = {}
-          })
-        }
-
-        const task = await client.tasks.create({...taskObjBase, ...parentObj})
         setOutput('task_url', task.permalink_url)
-        setOutput('result', 'created')
         const sectionId = getInput('move_to_section_id')
         if (sectionId) {
           await client.sections.addTask(sectionId, {task: task.gid})

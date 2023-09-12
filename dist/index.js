@@ -175,6 +175,37 @@ function findPRTask(prURL, urlFieldGID, project) {
         return null;
     });
 }
+function createPRTask(title, notes, prStatus, customFields) {
+    return __awaiter(this, void 0, void 0, function* () {
+        (0, core_1.info)('Creating new PR task');
+        const payload = github_1.context.payload;
+        const taskObjBase = {
+            workspace: ASANA_WORKSPACE_ID,
+            // eslint-disable-next-line camelcase
+            custom_fields: {
+                [customFields.url.gid]: payload.pull_request.html_url,
+                [customFields.status.gid]: prStatus
+            },
+            notes,
+            name: title,
+            projects: [PROJECT_ID]
+        };
+        let parentObj = {};
+        const asanaTaskMatch = notes.match(/Asana:.*https:\/\/app.asana.*\/([0-9]+).*/);
+        if (asanaTaskMatch) {
+            (0, core_1.info)(`Found Asana task mention with parent ID: ${asanaTaskMatch[1]}`);
+            const parentID = asanaTaskMatch[1];
+            parentObj = { parent: parentID };
+            // Verify we can access parent or we can't add it
+            yield client.tasks.findById(parentID).catch(e => {
+                (0, core_1.info)(`Can't access parent task: ${parentID}: ${e}`);
+                (0, core_1.info)(`Add 'dax' user to respective projects to enable this feature`);
+                parentObj = {};
+            });
+        }
+        return client.tasks.create(Object.assign(Object.assign({}, taskObjBase), parentObj));
+    });
+}
 function run() {
     var _a, _b;
     return __awaiter(this, void 0, void 0, function* () {
@@ -210,36 +241,30 @@ Note: This description is automatically updated from Github. Changes will be LOS
 ${htmlUrl}
 
 ${body.replace(/^---$[\s\S]*/gm, '')}`;
-                const asanaTaskMatch = notes.match(/Asana:.*https:\/\/app.asana.*\/([0-9]+).*/);
                 if (!prTask) {
-                    // task doesn't exist, create a new one
-                    (0, core_1.info)('Creating new PR task');
-                    const taskObjBase = {
-                        workspace: ASANA_WORKSPACE_ID,
-                        // eslint-disable-next-line camelcase
-                        custom_fields: {
-                            [customFields.url.gid]: htmlUrl,
-                            [customFields.status.gid]: statusGid
-                        },
-                        notes,
-                        name: title,
-                        projects: [PROJECT_ID]
-                    };
-                    let parentObj = {};
-                    if (asanaTaskMatch) {
-                        (0, core_1.info)(`Found Asana task mention with parent ID: ${asanaTaskMatch[1]}`);
-                        const parentID = asanaTaskMatch[1];
-                        parentObj = { parent: parentID };
-                        // Verify we can access parent or we can't add it
-                        const parent = yield client.tasks.findById(parentID).catch(e => {
-                            (0, core_1.info)(`Can't access parent task: ${parentID}: ${e}`);
-                            (0, core_1.info)(`Add 'dax' user to respective projects to enable this feature`);
-                            parentObj = {};
-                        });
+                    let task;
+                    if (payload.action === 'opened') {
+                        task = yield createPRTask(title, notes, statusGid, customFields);
+                        (0, core_1.setOutput)('result', 'created');
                     }
-                    const task = yield client.tasks.create(Object.assign(Object.assign({}, taskObjBase), parentObj));
+                    else {
+                        const maxRetries = 5;
+                        let retries = 0;
+                        while (retries < maxRetries) {
+                            // Wait for PR to appear
+                            (0, core_1.info)(`PR task not found yet. Sleeping for 10s...`);
+                            yield new Promise(resolve => setTimeout(resolve, 20000));
+                            task = yield findPRTask(htmlUrl, customFields.url.gid, PROJECT_ID);
+                            if (task) {
+                                (0, core_1.info)(`Found PR task ${task.gid}`);
+                                break;
+                            }
+                            retries++;
+                        }
+                        throw new Error('No PR task found. Bailing out');
+                    }
+                    // task doesn't exist, create a new one
                     (0, core_1.setOutput)('task_url', task.permalink_url);
-                    (0, core_1.setOutput)('result', 'created');
                     const sectionId = (0, core_1.getInput)('move_to_section_id');
                     if (sectionId) {
                         yield client.sections.addTask(sectionId, { task: task.gid });
