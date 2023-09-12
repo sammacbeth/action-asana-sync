@@ -16,7 +16,6 @@ Create a [workflow file](./.github/workflows/asana.yml) that runs on
 
 ```yml
 name: 'asana sync'
-concurrency: ci-${{ github.ref }} # Make sure we don't run more than one at a time
 on:
   pull_request_review:
   pull_request:
