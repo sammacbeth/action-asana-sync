@@ -278,7 +278,7 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`;
             // Whether we want to close the PR task
             let closeTask = false;
             // Handle PR close events (merged/closed)
-            if (['closed'].includes(payload.action)) {
+            if (['closed'].includes(payload.pull_request.state)) {
                 (0, core_1.info)(`Pull request closed. Closing any remaining subtasks`);
                 // Close any remaining review tasks when PR is merged
                 closeSubtasks(taskId);
