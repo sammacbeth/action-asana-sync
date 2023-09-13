@@ -141,11 +141,13 @@ function closeSubtasks(taskId) {
         }
     });
 }
-function findPRTask(prURL, urlFieldGID, project) {
+function findPRTask(customFields) {
     return __awaiter(this, void 0, void 0, function* () {
         // Let's first try to seaech using PR URL
+        const payload = github_1.context.payload;
+        const prURL = payload.pull_request.html_url;
         const prTasks = yield client.tasks.searchInWorkspace(ASANA_WORKSPACE_ID, {
-            [`custom_fields.${urlFieldGID}.value`]: prURL
+            [customFields.url.gid]: prURL
         });
         prTasks.data = [];
         if (prTasks.data.length > 0) {
@@ -156,7 +158,7 @@ function findPRTask(prURL, urlFieldGID, project) {
             // searchInWorkspace can fail for recently created Asana tasks. Let's look
             // at 100 most recent tasks in destination project
             // https://developers.asana.com/reference/searchtasksforworkspace#eventual-consistency
-            const projectTasks = yield client.tasks.findByProject(project, {
+            const projectTasks = yield client.tasks.findByProject(PROJECT_ID, {
                 // eslint-disable-next-line camelcase
                 opt_fields: 'custom_fields',
                 limit: 100
@@ -164,7 +166,8 @@ function findPRTask(prURL, urlFieldGID, project) {
             for (const task of projectTasks.data) {
                 (0, core_1.info)(`Checking task ${task.gid} for PR link`);
                 for (const field of task.custom_fields) {
-                    if (field.gid === urlFieldGID && field.display_value === prURL) {
+                    if (field.gid === customFields.url.gid &&
+                        field.display_value === prURL) {
                         (0, core_1.info)(`Found existing task ID ${task.gid} for PR ${prURL}`);
                         return task;
                     }
@@ -256,7 +259,7 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`;
                 let retries = 0;
                 while (retries < maxRetries) {
                     // Wait for PR to appear
-                    task = yield findPRTask(htmlUrl, customFields.url.gid, PROJECT_ID);
+                    task = yield findPRTask(customFields);
                     if (task) {
                         (0, core_1.setOutput)('result', 'updated');
                         break;

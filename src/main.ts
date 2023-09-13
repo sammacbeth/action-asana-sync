@@ -159,13 +159,14 @@ async function closeSubtasks(taskId: string) {
 }
 
 async function findPRTask(
-  prURL: string,
-  urlFieldGID: string,
-  project: string
+  customFields: PRFields
 ): Promise<asana.resources.Tasks.Type | null> {
   // Let's first try to seaech using PR URL
+  const payload = context.payload as PullRequestEvent
+  const prURL = payload.pull_request.html_url
+
   const prTasks = await client.tasks.searchInWorkspace(ASANA_WORKSPACE_ID, {
-    [`custom_fields.${urlFieldGID}.value`]: prURL
+    [customFields.url.gid]: prURL
   })
   prTasks.data = []
   if (prTasks.data.length > 0) {
@@ -175,7 +176,7 @@ async function findPRTask(
     // searchInWorkspace can fail for recently created Asana tasks. Let's look
     // at 100 most recent tasks in destination project
     // https://developers.asana.com/reference/searchtasksforworkspace#eventual-consistency
-    const projectTasks = await client.tasks.findByProject(project, {
+    const projectTasks = await client.tasks.findByProject(PROJECT_ID, {
       // eslint-disable-next-line camelcase
       opt_fields: 'custom_fields',
       limit: 100
@@ -184,7 +185,10 @@ async function findPRTask(
     for (const task of projectTasks.data) {
       info(`Checking task ${task.gid} for PR link`)
       for (const field of task.custom_fields) {
-        if (field.gid === urlFieldGID && field.display_value === prURL) {
+        if (
+          field.gid === customFields.url.gid &&
+          field.display_value === prURL
+        ) {
           info(`Found existing task ID ${task.gid} for PR ${prURL}`)
           return task
         }
@@ -297,7 +301,7 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`
 
       while (retries < maxRetries) {
         // Wait for PR to appear
-        task = await findPRTask(htmlUrl, customFields.url.gid, PROJECT_ID)
+        task = await findPRTask(customFields)
         if (task) {
           setOutput('result', 'updated')
           break
