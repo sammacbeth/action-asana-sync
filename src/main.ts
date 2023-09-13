@@ -312,7 +312,11 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`
       }
 
       if (!task) {
-        throw new Error('No PR task found. Bailing out')
+        info(
+          `Waited a long time and no task appeared. Assuming old PR and creating a new task.`
+        )
+        task = await createPRTask(title, notes, statusGid, customFields)
+        setOutput('result', 'created')
       }
     }
 

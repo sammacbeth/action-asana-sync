@@ -269,7 +269,9 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`;
                     retries++;
                 }
                 if (!task) {
-                    throw new Error('No PR task found. Bailing out');
+                    (0, core_1.info)(`Waited a long time and no task appeared. Assuming old PR and creating a new task.`);
+                    task = yield createPRTask(title, notes, statusGid, customFields);
+                    (0, core_1.setOutput)('result', 'created');
                 }
             }
             (0, core_1.setOutput)('task_url', task.permalink_url);
