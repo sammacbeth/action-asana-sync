@@ -11,7 +11,8 @@ const CUSTOM_FIELD_NAMES = {
 type PRState = 'Open' | 'Closed' | 'Merged' | 'Approved' | 'Draft'
 const client = Client.create({
   defaultHeaders: {
-    'asana-enable': 'new_user_task_lists,new_project_templates'
+    'asana-enable':
+      'new_user_task_lists,new_project_templates,new_goal_memberships'
   }
 }).useAccessToken(getInput('ASANA_ACCESS_TOKEN', {required: true}))
 const ASANA_WORKSPACE_ID = getInput('ASANA_WORKSPACE_ID', {required: true})
