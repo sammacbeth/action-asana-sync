@@ -25,7 +25,7 @@ const CUSTOM_FIELD_NAMES = {
 };
 const client = asana_1.Client.create({
     defaultHeaders: {
-        'asana-enable': 'new_user_task_lists,new_project_templates'
+        'asana-enable': 'new_user_task_lists,new_project_templates,new_goal_memberships'
     }
 }).useAccessToken((0, core_1.getInput)('ASANA_ACCESS_TOKEN', { required: true }));
 const ASANA_WORKSPACE_ID = (0, core_1.getInput)('ASANA_WORKSPACE_ID', { required: true });
