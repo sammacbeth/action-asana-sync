@@ -84,9 +84,13 @@ function run() {
             (0, core_1.info)('Only runs for PR changes');
             // core.setOutput('time', new Date().toTimeString())
         }
-        catch (error) {
-            if (error instanceof Error)
-                (0, core_1.setFailed)(error.message);
+        catch (e) {
+            if (e instanceof Error) {
+                if (e.value) {
+                    (0, core_1.error)(e.value);
+                }
+                (0, core_1.setFailed)(e.message);
+            }
         }
     });
 }
@@ -105,6 +109,10 @@ function findCustomFields(workspaceGid) {
         if (!githubUrlField || !githubStatusField) {
             (0, core_1.debug)(JSON.stringify(customFields));
             throw new Error('Custom fields are missing. Please create them');
+        }
+        else {
+            (0, core_1.debug)(`${CUSTOM_FIELD_NAMES.url} field GID: ${githubUrlField === null || githubUrlField === void 0 ? void 0 : githubUrlField.gid}`);
+            (0, core_1.debug)(`${CUSTOM_FIELD_NAMES.status} field GID: ${githubStatusField === null || githubStatusField === void 0 ? void 0 : githubStatusField.gid}`);
         }
         return {
             url: githubUrlField,
