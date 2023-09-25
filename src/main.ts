@@ -1,5 +1,5 @@
 import asana, {Client} from 'asana'
-import {info, setFailed, getInput, debug} from '@actions/core'
+import {info, setFailed, getInput, debug, error} from '@actions/core'
 import {context} from '@actions/github'
 import {PullRequest, PullRequestEvent} from '@octokit/webhooks-types'
 
@@ -73,8 +73,13 @@ async function run(): Promise<void> {
     }
     info('Only runs for PR changes')
     // core.setOutput('time', new Date().toTimeString())
-  } catch (error) {
-    if (error instanceof Error) setFailed(error.message)
+  } catch (e) {
+    if (e instanceof Error) {
+      if ((<any>e).value) {
+        error((<any>e).value)
+      }
+      setFailed(e.message)
+    }
   }
 }
 
@@ -99,6 +104,9 @@ async function findCustomFields(workspaceGid: string) {
   if (!githubUrlField || !githubStatusField) {
     debug(JSON.stringify(customFields))
     throw new Error('Custom fields are missing. Please create them')
+  } else {
+    debug(`${CUSTOM_FIELD_NAMES.url} field GID: ${githubUrlField?.gid}`)
+    debug(`${CUSTOM_FIELD_NAMES.status} field GID: ${githubStatusField?.gid}`)
   }
   return {
     url: githubUrlField,
