@@ -87,7 +87,12 @@ function createOrReopenReviewSubtask(taskId, reviewer, subtasks) {
             name: `Review Request: ${title}`,
             notes: `${author} requested your code review of ${payload.pull_request.html_url}.
 
-Please review the changes. This task will be automatically closed when the review is completed in Github.`,
+NOTE:
+* This task will be automatically closed when the review is completed in Github
+* Do not add this task to REVIEW/RELEASE project
+* Do not reassign to someone else
+
+See parent task for more information`,
             assignee: reviewerEmail,
             followers: [author, reviewerEmail]
         };
@@ -236,7 +241,7 @@ function run() {
             const customFields = yield findCustomFields(ASANA_WORKSPACE_ID);
             // PR metadata
             const statusGid = ((_b = (_a = customFields.status.enum_options) === null || _a === void 0 ? void 0 : _a.find(f => f.name === getPRState(payload.pull_request))) === null || _b === void 0 ? void 0 : _b.gid) || '';
-            const title = `${payload.repository.full_name}#${payload.pull_request.number} - ${payload.pull_request.title}`;
+            const title = `PR ${payload.repository.name} #${payload.pull_request.number}: ${payload.pull_request.title}`;
             const body = payload.pull_request.body || 'Empty description';
             const notes = `
 Note: This description is automatically updated from Github. Changes will be LOST.
