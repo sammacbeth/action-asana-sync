@@ -97,7 +97,12 @@ async function createOrReopenReviewSubtask(
     name: `Review Request: ${title}`,
     notes: `${author} requested your code review of ${payload.pull_request.html_url}.
 
-Please review the changes. This task will be automatically closed when the review is completed in Github.`,
+NOTE:
+* This task will be automatically closed when the review is completed in Github
+* Do not add this task to REVIEW/RELEASE project
+* Do not reassign to someone else
+
+See parent task for more information`,
     assignee: reviewerEmail,
     followers: [author, reviewerEmail]
   }
@@ -276,7 +281,7 @@ async function run(): Promise<void> {
       customFields.status.enum_options?.find(
         f => f.name === getPRState(payload.pull_request)
       )?.gid || ''
-    const title = `${payload.repository.full_name}#${payload.pull_request.number} - ${payload.pull_request.title}`
+    const title = `PR ${payload.repository.name} #${payload.pull_request.number}: ${payload.pull_request.title}`
     const body = payload.pull_request.body || 'Empty description'
 
     const notes = `
