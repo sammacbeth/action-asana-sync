@@ -317,7 +317,7 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`;
         }
         catch (error) {
             if (error instanceof Error)
-                (0, core_1.setFailed)(error.message);
+                (0, core_1.setFailed)(`${error.message}\nStacktrace:\n${error.stack}`);
         }
     });
 }
