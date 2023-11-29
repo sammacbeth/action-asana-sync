@@ -363,7 +363,8 @@ ${body.replace(/^---$[\s\S]*/gm, '')}`
       }
     })
   } catch (error) {
-    if (error instanceof Error) setFailed(error.message)
+    if (error instanceof Error)
+      setFailed(`${error.message}\nStacktrace:\n${error.stack}`)
   }
 }
 
