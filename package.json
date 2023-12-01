@@ -29,7 +29,7 @@
     "asana": "github:Asana/node-asana"
   },
   "devDependencies": {
-    "@octokit/webhooks-types": "^7.2.0",
+    "@octokit/webhooks-types": "^7.3.1",
     "@types/asana": "^0.18.16",
     "@types/node": "^20.5.7",
     "@typescript-eslint/parser": "^5.62.0",
