@@ -97,8 +97,9 @@ See parent task for more information`,
             followers: [author, reviewerEmail]
         };
         if (!reviewSubtask) {
-            (0, core_1.info)(`Creating review subtask for ${reviewerEmail}`);
             (0, core_1.info)(`Author: ${author}`);
+            (0, core_1.info)(`Creating review subtask for ${reviewerEmail}: ${JSON.stringify(subtaskObj)}`);
+            (0, core_1.info)(`Creating new subtask can fail when too many subtasks are nested!`);
             reviewSubtask = yield client.tasks.addSubtask(taskId, subtaskObj);
         }
         else {

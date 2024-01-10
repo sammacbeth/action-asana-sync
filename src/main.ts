@@ -107,8 +107,13 @@ See parent task for more information`,
     followers: [author, reviewerEmail]
   }
   if (!reviewSubtask) {
-    info(`Creating review subtask for ${reviewerEmail}`)
     info(`Author: ${author}`)
+    info(
+      `Creating review subtask for ${reviewerEmail}: ${JSON.stringify(
+        subtaskObj
+      )}`
+    )
+    info(`Creating new subtask can fail when too many subtasks are nested!`)
     reviewSubtask = await client.tasks.addSubtask(taskId, subtaskObj)
   } else {
     info(`Reopening a review subtask for ${reviewerEmail}`)
