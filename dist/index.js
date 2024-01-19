@@ -244,6 +244,7 @@ function run() {
             const statusGid = ((_b = (_a = customFields.status.enum_options) === null || _a === void 0 ? void 0 : _a.find(f => f.name === getPRState(payload.pull_request))) === null || _b === void 0 ? void 0 : _b.gid) || '';
             const title = `PR ${payload.repository.name} #${payload.pull_request.number}: ${payload.pull_request.title}`;
             const body = payload.pull_request.body || 'Empty description';
+            const truncatedBody = body.length > 5000 ? `${body.slice(0, 5000)}…` : body;
             const notes = `
 Note: This description is automatically updated from Github. Changes will be LOST.
 Task is intentionally unassigned. PR authors can assign themselves and add this
@@ -253,7 +254,7 @@ Code reviews will be created as subtasks and assigned to reviewers.
 
 ${htmlUrl}
 
-${body.replace(/^---$[\s\S]*/gm, '')}`;
+${truncatedBody.replace(/^---$[\s\S]*/gm, '')}`;
             let task;
             if (['opened'].includes(payload.action)) {
                 task = yield createPRTask(title, notes, statusGid, customFields);

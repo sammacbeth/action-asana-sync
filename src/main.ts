@@ -288,6 +288,7 @@ async function run(): Promise<void> {
       )?.gid || ''
     const title = `PR ${payload.repository.name} #${payload.pull_request.number}: ${payload.pull_request.title}`
     const body = payload.pull_request.body || 'Empty description'
+    const truncatedBody = body.length > 5000 ? `${body.slice(0, 5000)}…` : body
 
     const notes = `
 Note: This description is automatically updated from Github. Changes will be LOST.
@@ -298,7 +299,7 @@ Code reviews will be created as subtasks and assigned to reviewers.
 
 ${htmlUrl}
 
-${body.replace(/^---$[\s\S]*/gm, '')}`
+${truncatedBody.replace(/^---$[\s\S]*/gm, '')}`
 
     let task
     if (['opened'].includes(payload.action)) {
