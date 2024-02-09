@@ -12,7 +12,7 @@ on:
 
 jobs:
   sync:
-    runs-on: default
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: ./
