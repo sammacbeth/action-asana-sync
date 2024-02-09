@@ -21,4 +21,4 @@ jobs:
           ASANA_WORKSPACE_ID: ${{ secrets.ASANA_WORKSPACE_ID }}
           ASANA_PROJECT_ID: "1203415155983021"
           move_to_section_id: '1203902855070500'
-          USER_MAP: ${{ env.USER_MAP }}
+          USER_MAP: ${{ vars.USER_MAP }}
