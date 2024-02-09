@@ -14,6 +14,15 @@ inputs:
   move_to_section_id:
     required: false
     description: "If set: move the task to this section after creation"
+  USER_MAP:
+    required: false
+    description: "JSON string mapping Github user IDs to Asana Email addresses"
+  SKIPPED_USERS:
+    required: false
+    description: "Comma separated list of users who should not be assigned tasks"
+  NO_AUTOCLOSE_PROJECTS:
+    required: false
+    description: "Comma separated list of project GIDs where we should not automatically close tasks"
 outputs:
   task_url:
     description: URL of created/updated PR review task
