@@ -1,19 +1,33 @@
-name: 'Asana Sync'
-description: 'Sync Github PRs to Asana Tasks'
-author: 'Sam Macbeth'
+name: "Asana Sync"
+description: "Sync Github PRs to Asana Tasks"
+author: "Sam Macbeth"
 inputs:
   ASANA_ACCESS_TOKEN:
     required: true
-    description: 'Access token for Asana API calls'
+    description: "Access token for Asana API calls"
   ASANA_WORKSPACE_ID:
     required: true
-    description: 'ID of your Asana workspace'
+    description: "ID of your Asana workspace"
   ASANA_PROJECT_ID:
     required: true
-    description: 'Project ID where issues should be created in Asana'
+    description: "Project ID where issues should be created in Asana"
   move_to_section_id:
     required: false
-    description: 'If set: move the task to this section after creation'
+    description: "If set: move the task to this section after creation"
+  USER_MAP:
+    required: false
+    description: "JSON string mapping Github user IDs to Asana Email addresses"
+  SKIPPED_USERS:
+    required: false
+    description: "Comma separated list of users who should not be assigned tasks"
+  NO_AUTOCLOSE_PROJECTS:
+    required: false
+    description: "Comma separated list of project GIDs where we should not automatically close tasks"
+outputs:
+  task_url:
+    description: URL of created/updated PR review task
+  result:
+    description: "Will be one of: created, updated"
 runs:
-  using: 'node16'
-  main: 'dist/index.js'
+  using: "node16"
+  main: "dist/index.js"
