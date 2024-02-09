@@ -23,6 +23,7 @@ const CUSTOM_FIELD_NAMES = {
     url: 'Github URL',
     status: 'Github Status'
 };
+const MAIL_MAP = JSON.parse((0, core_1.getInput)('USER_MAP', { required: false }) || '{}');
 const client = asana_1.Client.create({
     defaultHeaders: {
         'asana-enable': 'new_user_task_lists,new_project_templates,new_goal_memberships'
@@ -30,67 +31,285 @@ const client = asana_1.Client.create({
 }).useAccessToken((0, core_1.getInput)('ASANA_ACCESS_TOKEN', { required: true }));
 const ASANA_WORKSPACE_ID = (0, core_1.getInput)('ASANA_WORKSPACE_ID', { required: true });
 const PROJECT_ID = (0, core_1.getInput)('ASANA_PROJECT_ID', { required: true });
+// Users which will not receive PRs/reviews tasks
+const SKIPPED_USERS = (0, core_1.getInput)('SKIPPED_USERS');
+const SKIPPED_USERS_LIST = SKIPPED_USERS.split(',');
+// Handle list of projects where we don't want to automatically close tasks
+const NO_AUTOCLOSE_PROJECTS = (0, core_1.getInput)('NO_AUTOCLOSE_PROJECTS');
+const NO_AUTOCLOSE_LIST = NO_AUTOCLOSE_PROJECTS.split(',');
+function getUserFromLogin(login) {
+    let mail = MAIL_MAP[login];
+    if (mail === undefined) {
+        // Fall back to matching logins
+        mail = login;
+    }
+    return `${mail}@duckduckgo.com`;
+}
+function createOrReopenReviewSubtask(taskId, reviewer, subtasks) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const payload = github_1.context.payload;
+        const title = payload.pull_request.title;
+        //  const subtasks = await client.tasks.subtasks(taskId)
+        const author = getUserFromLogin(payload.pull_request.user.login);
+        const reviewerEmail = getUserFromLogin(reviewer);
+        if (SKIPPED_USERS_LIST.includes(reviewer)) {
+            (0, core_1.info)(`Skipping review subtask creation for ${reviewer} - member of SKIPPED_USERS`);
+            return null;
+        }
+        let reviewSubtask;
+        for (let subtask of subtasks.data) {
+            (0, core_1.info)(`Checking subtask ${subtask.gid} assignee`);
+            subtask = yield client.tasks.findById(subtask.gid);
+            if (!subtask.assignee) {
+                (0, core_1.info)(`Task ${subtask.gid} has no assignee`);
+                continue;
+            }
+            const asanaUser = yield client.users.findById(subtask.assignee.gid);
+            if (asanaUser.email === reviewerEmail) {
+                (0, core_1.info)(`Found existing review task for ${subtask.gid} and ${asanaUser.email}`);
+                reviewSubtask = subtask;
+                break;
+            }
+        }
+        (0, core_1.info)(`Subtask for ${reviewerEmail}: ${JSON.stringify(reviewSubtask)}`);
+        const subtaskObj = {
+            name: `Review Request: ${title}`,
+            notes: `${author} requested your code review of ${payload.pull_request.html_url}.
+
+NOTE:
+* This task will be automatically closed when the review is completed in Github
+
+See parent task for more information`,
+            assignee: reviewerEmail,
+            followers: [author, reviewerEmail]
+        };
+        if (!reviewSubtask) {
+            (0, core_1.info)(`Author: ${author}`);
+            (0, core_1.info)(`Creating review subtask for ${reviewerEmail}: ${JSON.stringify(subtaskObj)}`);
+            (0, core_1.info)(`Creating new subtask can fail when too many subtasks are nested!`);
+            reviewSubtask = yield client.tasks.addSubtask(taskId, subtaskObj);
+        }
+        else {
+            (0, core_1.info)(`Reopening a review subtask for ${reviewerEmail}`);
+            // TODO add a comment?
+            yield client.tasks.updateTask(reviewSubtask.gid, { completed: false });
+        }
+        return reviewSubtask;
+    });
+}
+function updateReviewSubTasks(taskId) {
+    return __awaiter(this, void 0, void 0, function* () {
+        (0, core_1.info)(`Creating/updating review subtasks for task ${taskId}`);
+        const payload = github_1.context.payload;
+        const subtasks = yield client.tasks.subtasks(taskId);
+        if (github_1.context.eventName === 'pull_request') {
+            if (payload.action === 'review_requested') {
+                const requestPayload = payload;
+                // TODO handle teams?
+                if ('requested_reviewer' in requestPayload) {
+                    createOrReopenReviewSubtask(taskId, requestPayload.requested_reviewer.login, subtasks);
+                }
+            }
+        }
+        else if (github_1.context.eventName === 'pull_request_review') {
+            const reviewPayload = github_1.context.payload;
+            if (reviewPayload.action === 'submitted' &&
+                reviewPayload.review.state === 'approved') {
+                const reviewer = reviewPayload.review.user;
+                (0, core_1.info)(`PR approved by ${reviewer.login}. Updating review subtask.`);
+                const subtask = yield createOrReopenReviewSubtask(taskId, reviewer.login, subtasks);
+                if (subtask !== null) {
+                    (0, core_1.info)(`Completing review subtask for ${reviewer.login}: ${subtask.gid}`);
+                    yield client.tasks.updateTask(subtask.gid, { completed: true });
+                }
+            }
+        }
+    });
+}
+function closeSubtasks(taskId) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const subtasks = yield client.tasks.subtasks(taskId);
+        for (const subtask of subtasks.data) {
+            yield client.tasks.updateTask(subtask.gid, { completed: true });
+        }
+    });
+}
+function findPRTask(customFields) {
+    return __awaiter(this, void 0, void 0, function* () {
+        // Let's first try to seaech using PR URL
+        const payload = github_1.context.payload;
+        const prURL = payload.pull_request.html_url;
+        const prTasks = yield client.tasks.searchInWorkspace(ASANA_WORKSPACE_ID, {
+            [`custom_fields.${customFields.url.gid}.value`]: prURL
+        });
+        if (prTasks.data.length > 0) {
+            (0, core_1.info)(`Found PR task using searchInWorkspace: ${prTasks.data[0].gid}`);
+            return prTasks.data[0];
+        }
+        else {
+            // searchInWorkspace can fail for recently created Asana tasks. Let's look
+            // at 100 most recent tasks in destination project
+            // https://developers.asana.com/reference/searchtasksforworkspace#eventual-consistency
+            const projectTasks = yield client.tasks.findByProject(PROJECT_ID, {
+                // eslint-disable-next-line camelcase
+                opt_fields: 'custom_fields',
+                limit: 100
+            });
+            for (const task of projectTasks.data) {
+                (0, core_1.info)(`Checking task ${task.gid} for PR link`);
+                for (const field of task.custom_fields) {
+                    if (field.gid === customFields.url.gid &&
+                        field.display_value === prURL) {
+                        (0, core_1.info)(`Found existing task ID ${task.gid} for PR ${prURL}`);
+                        return task;
+                    }
+                }
+            }
+        }
+        (0, core_1.info)(`No matching Asana task found for PR ${prURL}`);
+        return null;
+    });
+}
+function createPRTask(title, notes, prStatus, customFields) {
+    return __awaiter(this, void 0, void 0, function* () {
+        (0, core_1.info)('Creating new PR task');
+        const payload = github_1.context.payload;
+        const taskObjBase = {
+            workspace: ASANA_WORKSPACE_ID,
+            // eslint-disable-next-line camelcase
+            custom_fields: {
+                [customFields.url.gid]: payload.pull_request.html_url,
+                [customFields.status.gid]: prStatus
+            },
+            notes,
+            name: title,
+            projects: [PROJECT_ID]
+        };
+        let parentObj = {};
+        const asanaTaskMatch = notes.match(/Asana:.*https:\/\/app.asana.*\/([0-9]+).*/);
+        if (asanaTaskMatch) {
+            (0, core_1.info)(`Found Asana task mention with parent ID: ${asanaTaskMatch[1]}`);
+            const parentID = asanaTaskMatch[1];
+            parentObj = { parent: parentID };
+            // Verify we can access parent or we can't add it
+            try {
+                yield client.tasks.findById(parentID);
+            }
+            catch (e) {
+                (0, core_1.info)(`Can't access parent task: ${parentID}: ${e}`);
+                (0, core_1.info)(`Add 'dax' user to respective projects to enable this feature`);
+                parentObj = {};
+            }
+        }
+        return client.tasks.create(Object.assign(Object.assign({}, taskObjBase), parentObj));
+    });
+}
 function run() {
     var _a, _b;
     return __awaiter(this, void 0, void 0, function* () {
         try {
             (0, core_1.info)(`Event: ${github_1.context.eventName}.`);
-            if (['pull_request', 'pull_request_target'].includes(github_1.context.eventName)) {
-                const payload = github_1.context.payload;
-                const htmlUrl = payload.pull_request.html_url;
-                (0, core_1.info)(`PR url: ${htmlUrl}`);
-                (0, core_1.info)(`Action: ${payload.action}`);
-                const customFields = yield findCustomFields(ASANA_WORKSPACE_ID);
-                // PR metadata
-                const statusGid = ((_b = (_a = customFields.status.enum_options) === null || _a === void 0 ? void 0 : _a.find(f => f.name === getPRState(payload.pull_request))) === null || _b === void 0 ? void 0 : _b.gid) || '';
-                const title = `PR${payload.pull_request.number} - ${payload.pull_request.title}`;
-                // look for an existing task
-                const prTask = yield client.tasks.searchInWorkspace(ASANA_WORKSPACE_ID, {
-                    [`custom_fields.${customFields.url.gid}.value`]: htmlUrl
-                });
-                if (prTask.data.length === 0) {
-                    // task doesn't exist, create a new one
-                    (0, core_1.info)('Creating new PR task');
-                    const task = yield client.tasks.create({
-                        workspace: ASANA_WORKSPACE_ID,
-                        // eslint-disable-next-line camelcase
-                        custom_fields: {
-                            [customFields.url.gid]: htmlUrl,
-                            [customFields.status.gid]: statusGid
-                        },
-                        notes: `${htmlUrl}`,
-                        name: title,
-                        projects: [PROJECT_ID]
-                    });
-                    const sectionId = (0, core_1.getInput)('move_to_section_id');
-                    if (sectionId) {
-                        yield client.sections.addTask(sectionId, { task: task.gid });
-                    }
-                    // TODO: attachments
-                }
-                else {
-                    (0, core_1.info)(`Found task ${JSON.stringify(prTask.data[0])}`);
-                    const taskId = prTask.data[0].gid;
-                    yield client.tasks.updateTask(taskId, {
-                        name: title,
-                        // eslint-disable-next-line camelcase
-                        custom_fields: {
-                            [customFields.status.gid]: statusGid
-                        }
-                    });
-                }
+            if (!['pull_request', 'pull_request_target', 'pull_request_review'].includes(github_1.context.eventName)) {
+                (0, core_1.info)('Only runs for PR changes and reviews');
                 return;
             }
-            (0, core_1.info)('Only runs for PR changes');
-            // core.setOutput('time', new Date().toTimeString())
-        }
-        catch (e) {
-            if (e instanceof Error) {
-                if (e.value) {
-                    (0, core_1.error)(e.value);
-                }
-                (0, core_1.setFailed)(e.message);
+            (0, core_1.info)(`Event JSON: \n${JSON.stringify(github_1.context, null, 2)}`);
+            const payload = github_1.context.payload;
+            // Skip any action on PRs with this title
+            if (payload.pull_request.title.startsWith('Release: ')) {
+                (0, core_1.info)(`Skipping Asana sync for release PR`);
+                return;
             }
+            const htmlUrl = payload.pull_request.html_url;
+            const prAuthor = payload.pull_request.user.login;
+            let requestor = getUserFromLogin(prAuthor);
+            if (SKIPPED_USERS_LIST.includes(prAuthor)) {
+                (0, core_1.info)(`Changing assignee of PR review to dax - ${prAuthor} is member of SKIPPED_USERS`);
+                requestor = 'dax@duckduckgo.com';
+            }
+            (0, core_1.info)(`PR url: ${htmlUrl}`);
+            (0, core_1.info)(`Action: ${payload.action}`);
+            const customFields = yield findCustomFields(ASANA_WORKSPACE_ID);
+            // PR metadata
+            const statusGid = ((_b = (_a = customFields.status.enum_options) === null || _a === void 0 ? void 0 : _a.find(f => f.name === getPRState(payload.pull_request))) === null || _b === void 0 ? void 0 : _b.gid) || '';
+            const title = `PR ${payload.repository.name} #${payload.pull_request.number}: ${payload.pull_request.title}`;
+            const body = payload.pull_request.body || 'Empty description';
+            const truncatedBody = body.length > 5000 ? `${body.slice(0, 5000)}…` : body;
+            const notes = `
+Note: This description is automatically updated from Github. Changes will be LOST.
+Task is intentionally unassigned. PR authors can assign themselves and add this
+task to additional projects (for example https://app.asana.com/0/11984721910118/1204991209231483)
+
+Code reviews will be created as subtasks and assigned to reviewers.
+
+${htmlUrl}
+
+${truncatedBody.replace(/^---$[\s\S]*/gm, '')}`;
+            let task;
+            if (['opened'].includes(payload.action)) {
+                task = yield createPRTask(title, notes, statusGid, customFields);
+                (0, core_1.setOutput)('result', 'created');
+            }
+            else {
+                const maxRetries = 5;
+                let retries = 0;
+                while (retries < maxRetries) {
+                    // Wait for PR to appear
+                    task = yield findPRTask(customFields);
+                    if (task) {
+                        (0, core_1.setOutput)('result', 'updated');
+                        break;
+                    }
+                    (0, core_1.info)(`PR task not found yet. Sleeping...`);
+                    yield new Promise(resolve => setTimeout(resolve, 20000));
+                    retries++;
+                }
+                if (!task) {
+                    (0, core_1.info)(`Waited a long time and no task appeared. Assuming old PR and creating a new task.`);
+                    task = yield createPRTask(title, notes, statusGid, customFields);
+                    (0, core_1.setOutput)('result', 'created');
+                }
+            }
+            (0, core_1.setOutput)('task_url', task.permalink_url);
+            const sectionId = (0, core_1.getInput)('move_to_section_id');
+            if (sectionId) {
+                yield client.sections.addTask(sectionId, { task: task.gid });
+            }
+            const taskId = task.gid;
+            // Whether we want to close the PR task
+            let closeTask = false;
+            // Handle PR close events (merged/closed)
+            if (['closed'].includes(payload.pull_request.state)) {
+                (0, core_1.info)(`Pull request closed. Closing any remaining subtasks`);
+                // Close any remaining review tasks when PR is merged
+                closeSubtasks(taskId);
+                // Unless the task is in specific projects automatically close
+                closeTask = true;
+                (0, core_1.info)(`Considering whether to close PR task itself...`);
+                const fullTask = yield client.tasks.findById(taskId);
+                for (const membership of fullTask.memberships) {
+                    if (NO_AUTOCLOSE_LIST.includes(membership.project.gid)) {
+                        (0, core_1.info)(`Tasks is in one of NO_AUTOCLOSE_PROJECTS. Not closing`);
+                        closeTask = false;
+                    }
+                }
+            }
+            else {
+                yield updateReviewSubTasks(taskId);
+            }
+            yield client.tasks.updateTask(taskId, {
+                name: title,
+                notes,
+                completed: closeTask,
+                // eslint-disable-next-line camelcase
+                custom_fields: {
+                    [customFields.status.gid]: statusGid
+                }
+            });
+        }
+        catch (error) {
+            if (error instanceof Error)
+                (0, core_1.setFailed)(`${error.message}\nStacktrace:\n${error.stack}`);
         }
     });
 }
