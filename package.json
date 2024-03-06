@@ -26,11 +26,13 @@
   "dependencies": {
     "@actions/core": "^1.10.0",
     "@actions/github": "^5.1.1",
-    "asana": "github:Asana/node-asana"
+    "asana": "github:Asana/node-asana",
+    "markdown-it": "^14.0.0"
   },
   "devDependencies": {
     "@octokit/webhooks-types": "^7.3.1",
     "@types/asana": "^0.18.16",
+    "@types/markdown-it": "^13.0.7",
     "@types/node": "^20.11.14",
     "@typescript-eslint/parser": "^5.62.0",
     "@vercel/ncc": "^0.38.0",

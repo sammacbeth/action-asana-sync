@@ -8,6 +8,8 @@ import {
   PullRequestReviewRequestedEvent
 } from '@octokit/webhooks-types'
 
+import {renderMD} from './markdown'
+
 const CUSTOM_FIELD_NAMES = {
   url: 'Github URL',
   status: 'Github Status'
@@ -259,14 +261,6 @@ async function run(): Promise<void> {
     }
 
     const htmlUrl = payload.pull_request.html_url
-    const prAuthor = payload.pull_request.user.login
-    let requestor = getUserFromLogin(prAuthor)
-    if (SKIPPED_USERS_LIST.includes(prAuthor)) {
-      info(
-        `Changing assignee of PR review to dax - ${prAuthor} is member of SKIPPED_USERS`
-      )
-      requestor = 'dax@duckduckgo.com'
-    }
     info(`PR url: ${htmlUrl}`)
     info(`Action: ${payload.action}`)
     const customFields = await findCustomFields(ASANA_WORKSPACE_ID)
@@ -278,18 +272,31 @@ async function run(): Promise<void> {
       )?.gid || ''
     const title = `PR ${payload.repository.name} #${payload.pull_request.number}: ${payload.pull_request.title}`
     const body = payload.pull_request.body || 'Empty description'
-    const truncatedBody = body.length > 5000 ? `${body.slice(0, 5000)}…` : body
 
-    const notes = `
-Note: This description is automatically updated from Github. Changes will be LOST.
+    const preamble = `**Note:** This description is automatically updated from Github. **Changes will be LOST**.
 Task is intentionally unassigned. PR authors can assign themselves and add this
 task to additional projects (for example https://app.asana.com/0/11984721910118/1204991209231483)
 
 Code reviews will be created as subtasks and assigned to reviewers.
 
-${htmlUrl}
+PR: ${htmlUrl}`
 
-${truncatedBody.replace(/^---$[\s\S]*/gm, '')}`
+    // Asana has limits on size of notes. Let's be very conservative and trim the text
+    const truncatedBody = (
+      body.length > 5000 ? `${body.slice(0, 5000)}…` : body
+    ).replace(/^---$[\s\S]*/gm, '')
+
+    // Unformatted plaintext notes for fallback
+    const notes = `
+${preamble}
+
+${truncatedBody}`
+
+    // Rich-text notes with some custom "fixes" for Asana to render things
+    const htmlNotes = `<body>${renderMD(notes)}</body>`
+
+    info(`Notes: ${notes}`)
+    info(`HTML Notes: ${htmlNotes}`)
 
     let task
     if (['opened'].includes(payload.action)) {
@@ -349,15 +356,30 @@ ${truncatedBody.replace(/^---$[\s\S]*/gm, '')}`
       await updateReviewSubTasks(taskId)
     }
 
-    await client.tasks.updateTask(taskId, {
-      name: title,
-      notes,
-      completed: closeTask,
-      // eslint-disable-next-line camelcase
-      custom_fields: {
-        [customFields.status.gid]: statusGid
-      }
-    })
+    try {
+      // Try using html notes first and fall back to unformatted if this fails
+      await client.tasks.updateTask(taskId, {
+        name: title,
+        // eslint-disable-next-line camelcase
+        html_notes: htmlNotes,
+        completed: closeTask,
+        // eslint-disable-next-line camelcase
+        custom_fields: {
+          [customFields.status.gid]: statusGid
+        }
+      })
+    } catch (err) {
+      info(`Updating task with HTML notes failed. Retrying with plaintext`)
+      await client.tasks.updateTask(taskId, {
+        name: title,
+        notes,
+        completed: closeTask,
+        // eslint-disable-next-line camelcase
+        custom_fields: {
+          [customFields.status.gid]: statusGid
+        }
+      })
+    }
   } catch (error) {
     if (error instanceof Error)
       setFailed(`${error.message}\nStacktrace:\n${error.stack}`)
