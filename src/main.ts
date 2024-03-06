@@ -60,6 +60,7 @@ async function createOrReopenReviewSubtask(
   //  const subtasks = await client.tasks.subtasks(taskId)
   const author = getUserFromLogin(payload.pull_request.user.login)
   const reviewerEmail = getUserFromLogin(reviewer)
+  info(`Review requested from ${reviewer} (${reviewerEmail})`)
   if (SKIPPED_USERS_LIST.includes(reviewer)) {
     info(
       `Skipping review subtask creation for ${reviewer} - member of SKIPPED_USERS`
