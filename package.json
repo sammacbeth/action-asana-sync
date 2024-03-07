@@ -33,7 +33,7 @@
     "@octokit/webhooks-types": "^7.3.1",
     "@types/asana": "^0.18.16",
     "@types/markdown-it": "^13.0.7",
-    "@types/node": "^20.11.14",
+    "@types/node": "^20.11.25",
     "@typescript-eslint/parser": "^5.62.0",
     "@vercel/ncc": "^0.38.1",
     "eslint": "^8.50.0",
