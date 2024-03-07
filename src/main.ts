@@ -118,7 +118,10 @@ async function updateReviewSubTasks(taskId: string): Promise<void> {
   info(`Creating/updating review subtasks for task ${taskId}`)
   const payload = context.payload as PullRequestEvent
   const subtasks = await client.tasks.subtasks(taskId)
-  if (context.eventName === 'pull_request') {
+  if (
+    context.eventName === 'pull_request' ||
+    context.eventName === 'pull_request_target'
+  ) {
     if (payload.action === 'review_requested') {
       const requestPayload = payload as PullRequestReviewRequestedEvent
       // TODO handle teams?
