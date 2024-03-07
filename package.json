@@ -35,7 +35,7 @@
     "@types/markdown-it": "^13.0.7",
     "@types/node": "^20.11.14",
     "@typescript-eslint/parser": "^5.62.0",
-    "@vercel/ncc": "^0.38.0",
+    "@vercel/ncc": "^0.38.1",
     "eslint": "^8.50.0",
     "eslint-import-resolver-typescript": "^3.5.5",
     "eslint-plugin-github": "^4.7.0",
