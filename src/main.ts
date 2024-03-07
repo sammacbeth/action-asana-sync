@@ -41,11 +41,11 @@ const SKIPPED_USERS_LIST = SKIPPED_USERS.split(',')
 const NO_AUTOCLOSE_PROJECTS = getInput('NO_AUTOCLOSE_PROJECTS')
 const NO_AUTOCLOSE_LIST = NO_AUTOCLOSE_PROJECTS.split(',')
 
-function getUserFromLogin(login: string): string {
-  let mail = MAIL_MAP[login]
+function getUserFromLogin(login: string): string | null {
+  const mail = MAIL_MAP[login]
   if (mail === undefined) {
-    // Fall back to matching logins
-    mail = login
+    // Ignore unknown
+    return null
   }
   return `${mail}@duckduckgo.com`
 }
@@ -58,10 +58,11 @@ async function createOrReopenReviewSubtask(
   const payload = context.payload as PullRequestEvent
   const title = payload.pull_request.title
   //  const subtasks = await client.tasks.subtasks(taskId)
-  const author = getUserFromLogin(payload.pull_request.user.login)
+  const githubAuthor = payload.pull_request.user.login
+  const author = getUserFromLogin(githubAuthor)
   const reviewerEmail = getUserFromLogin(reviewer)
   info(`Review requested from ${reviewer} (${reviewerEmail})`)
-  if (SKIPPED_USERS_LIST.includes(reviewer)) {
+  if (SKIPPED_USERS_LIST.includes(reviewer) || reviewerEmail === null) {
     info(
       `Skipping review subtask creation for ${reviewer} - member of SKIPPED_USERS`
     )
@@ -86,16 +87,22 @@ async function createOrReopenReviewSubtask(
     }
   }
   info(`Subtask for ${reviewerEmail}: ${JSON.stringify(reviewSubtask)}`)
+  const taskFollowers = [reviewerEmail]
+  if (author !== null) {
+    taskFollowers.push(author)
+  }
   const subtaskObj = {
     name: `Review Request: ${title}`,
-    notes: `${author} requested your code review of ${payload.pull_request.html_url}.
+    notes: `${author || githubAuthor} requested your code review of ${
+      payload.pull_request.html_url
+    }.
 
 NOTE:
 * This task will be automatically closed when the review is completed in Github
 
 See parent task for more information`,
     assignee: reviewerEmail,
-    followers: [author, reviewerEmail]
+    followers: taskFollowers
   }
   if (!reviewSubtask) {
     info(`Author: ${author}`)
