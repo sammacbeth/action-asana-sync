@@ -44,7 +44,7 @@ const NO_AUTOCLOSE_LIST = NO_AUTOCLOSE_PROJECTS.split(',')
 function getUserFromLogin(login: string): string | null {
   const mail = MAIL_MAP[login]
   if (mail === undefined) {
-    // Ignore unknown 
+    // Ignore unknown
     return null
   }
   return `${mail}@duckduckgo.com`
