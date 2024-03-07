@@ -104,7 +104,8 @@ function updateReviewSubTasks(taskId) {
         (0, core_1.info)(`Creating/updating review subtasks for task ${taskId}`);
         const payload = github_1.context.payload;
         const subtasks = yield client.tasks.subtasks(taskId);
-        if (github_1.context.eventName === 'pull_request') {
+        if (github_1.context.eventName === 'pull_request' ||
+            github_1.context.eventName === 'pull_request_target') {
             if (payload.action === 'review_requested') {
                 const requestPayload = payload;
                 // TODO handle teams?
